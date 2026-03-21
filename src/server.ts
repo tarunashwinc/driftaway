@@ -1,0 +1,62 @@
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
+import { env } from "./config/env.js";
+import { errorHandler } from "./middleware/error-handler.js";
+import { authRoutes } from "./modules/auth/auth.routes.js";
+import { userRoutes } from "./modules/user/user.routes.js";
+import { tripRoutes } from "./modules/trip/trip.routes.js";
+import { adminRoutes } from "./modules/admin/admin.routes.js";
+
+const app = Fastify({
+  logger: {
+    level: env.LOG_LEVEL,
+    transport:
+      env.NODE_ENV === "development"
+        ? { target: "pino-pretty", options: { colorize: true } }
+        : undefined,
+  },
+});
+
+// ─── Plugins ───
+await app.register(cors, {
+  origin: env.FRONTEND_URL,
+  credentials: true,
+});
+
+await app.register(helmet);
+await app.register(cookie);
+
+await app.register(rateLimit, {
+  max: 100,
+  timeWindow: "1 minute",
+});
+
+// ─── Error handler ───
+app.setErrorHandler(errorHandler);
+
+// ─── Health check ───
+app.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
+
+// ─── Routes ───
+await app.register(authRoutes, { prefix: `${env.API_PREFIX}/auth` });
+await app.register(userRoutes, { prefix: `${env.API_PREFIX}/users` });
+await app.register(tripRoutes, { prefix: `${env.API_PREFIX}/trips` });
+await app.register(adminRoutes, { prefix: `${env.API_PREFIX}/admin` });
+
+// ─── Start ───
+const start = async () => {
+  try {
+    await app.listen({ port: env.PORT, host: env.HOST });
+    app.log.info(`🚀 DriftAway API running at http://${env.HOST}:${env.PORT}`);
+  } catch (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
+};
+
+start();
+
+export { app };

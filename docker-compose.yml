@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: driftaway-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: driftaway
+      POSTGRES_PASSWORD: driftaway
+      POSTGRES_DB: driftaway
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U driftaway"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: driftaway-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: driftaway-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    command: server /data --console-address ":9001"
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: driftaway-search
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: driftaway-dev-key
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilidata:/meili_data
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  meilidata:
