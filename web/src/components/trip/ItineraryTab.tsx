@@ -1,27 +1,38 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { Spinner } from "../ui/spinner";
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 interface ItineraryItem {
   id: string;
-  title: string;
+  sortOrder: number;
+  time: string;
+  activity: string;
   type: string;
-  startTime?: string | null;
-  endTime?: string | null;
-  location?: string | null;
-  notes?: string | null;
-  estimatedCost?: number | null;
-  currency?: string | null;
-  order: number;
+  highlight: boolean;
+  bookingRequired: boolean;
+  closedOn: string[];
+  openingHours: string | null;
+  tip: string | null;
+  thumbnail: string | null;
+  notes: string | null;
+  costLocal: number | null;
+  localCurrency: string | null;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface ItineraryDay {
   id: string;
   dayNumber: number;
   date: string;
-  title?: string | null;
+  title: string;
+  summary: string | null;
+  accommodation: string | null;
   items: ItineraryItem[];
 }
 
@@ -30,162 +41,274 @@ interface ItineraryResponse {
   data: ItineraryDay[];
 }
 
-const TYPE_EMOJI: Record<string, string> = {
-  hotel:        "🏨",
-  accommodation:"🏨",
-  sightseeing:  "🔭",
-  attraction:   "🔭",
-  dining:       "🍽️",
-  food:         "🍽️",
-  restaurant:   "🍽️",
-  transport:    "🚌",
-  transfer:     "🚌",
-  flight:       "✈️",
-  adventure:    "🧗",
-  outdoor:      "🧗",
-  culture:      "🏛️",
-  museum:       "🏛️",
-  wellness:     "🧘",
-  spa:          "🧘",
-  shopping:     "🛍️",
-  other:        "📍",
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const TYPE_CONFIG: Record<string, { emoji: string; label: string; color: string; bg: string }> = {
+  hotel:       { emoji: "🏨", label: "Stay",       color: "text-blue-700",   bg: "bg-blue-50" },
+  sightseeing: { emoji: "🔭", label: "Sightseeing", color: "text-purple-700", bg: "bg-purple-50" },
+  dining:      { emoji: "🍽️", label: "Dining",     color: "text-orange-700", bg: "bg-orange-50" },
+  transport:   { emoji: "🚌", label: "Transport",   color: "text-slate-600",  bg: "bg-slate-50" },
+  adventure:   { emoji: "🧗", label: "Adventure",   color: "text-green-700",  bg: "bg-green-50" },
+  culture:     { emoji: "🏛️", label: "Culture",     color: "text-amber-700",  bg: "bg-amber-50" },
+  wellness:    { emoji: "🧘", label: "Wellness",    color: "text-teal-700",   bg: "bg-teal-50" },
+  shopping:    { emoji: "🛍️", label: "Shopping",   color: "text-pink-700",   bg: "bg-pink-50" },
+  other:       { emoji: "📍", label: "Activity",    color: "text-gray-600",   bg: "bg-gray-50" },
 };
 
-function getTypeEmoji(type: string): string {
-  const lower = type.toLowerCase();
-  return TYPE_EMOJI[lower] ?? TYPE_EMOJI.other;
+function getTypeConfig(type: string) {
+  return TYPE_CONFIG[type.toLowerCase()] ?? TYPE_CONFIG.other;
 }
 
 function formatTime(time: string): string {
   const [h, m] = time.split(":");
-  const hour = parseInt(h, 10);
+  const hour = parseInt(h ?? "0", 10);
   const ampm = hour >= 12 ? "PM" : "AM";
   const hour12 = hour % 12 || 12;
   return `${hour12}:${m} ${ampm}`;
 }
 
 function formatDayDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en", {
-    weekday: "short",
-    month:   "short",
-    day:     "numeric",
-  });
+  // dateStr may be a full ISO timestamp or a plain date string
+  const d = new Date(dateStr.includes("T") ? dateStr : dateStr + "T00:00:00");
+  return d.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" });
 }
 
-function TimelineDot({ isLast }: { isLast: boolean }) {
-  return (
-    <div className="flex flex-col items-center shrink-0 w-5">
-      <div className="w-2 h-2 rounded-full bg-[#FF6B35] mt-1 shrink-0" />
-      {!isLast && (
-        <div className="w-px flex-1 bg-[#FF6B35]/20 mt-0.5 min-h-[1.5rem]" />
-      )}
-    </div>
-  );
+function formatCost(cost: number, currency: string | null): string {
+  if (cost === 0) return "Free";
+  const symbol = currency === "JPY" ? "¥" : currency === "INR" ? "₹" : currency === "USD" ? "$" : (currency ?? "");
+  return `${symbol}${cost.toLocaleString()}`;
 }
 
-function ItemRow({
-  item,
-  isLast,
-}: {
-  item: ItineraryItem;
-  isLast: boolean;
-}) {
+// ── Item card ─────────────────────────────────────────────────────────────────
+
+function ItemCard({ item, isLast }: { item: ItineraryItem; isLast: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const cfg = getTypeConfig(item.type);
+  const hasExtra = !!(item.notes || item.tip || item.openingHours || item.closedOn.length);
+
   return (
     <div className="flex gap-3">
-      {/* Timeline column */}
-      <TimelineDot isLast={isLast} />
+      {/* Timeline spine */}
+      <div className="flex flex-col items-center shrink-0 w-5 pt-1">
+        <div
+          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+            item.highlight ? "bg-[#FF6B35] ring-2 ring-[#FF6B35]/30" : "bg-[#D1D5DB]"
+          }`}
+        />
+        {!isLast && <div className="w-px flex-1 bg-[#E5E7EB] mt-1 min-h-[1.75rem]" />}
+      </div>
 
-      {/* Content */}
-      <div className={`flex-1 min-w-0 pb-3 ${isLast ? "" : ""}`}>
-        <div className="flex items-start gap-2">
-          {/* Time badge */}
-          {item.startTime && (
-            <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full bg-[#F0EEE9] text-[#6B7280] text-[10px] font-semibold tracking-wide whitespace-nowrap mt-0.5">
-              {formatTime(item.startTime)}
-              {item.endTime ? ` – ${formatTime(item.endTime)}` : ""}
+      {/* Card */}
+      <div className={`flex-1 min-w-0 mb-3 rounded-2xl border overflow-hidden ${
+        item.highlight
+          ? "border-[#FF6B35]/25 bg-gradient-to-br from-[#FF6B35]/5 to-white shadow-[0_2px_12px_rgba(255,107,53,0.1)]"
+          : "border-black/6 bg-white shadow-[0_1px_6px_rgba(0,0,0,0.05)]"
+      }`}>
+        {/* Main row */}
+        <div className="px-3.5 pt-3 pb-2.5">
+          <div className="flex items-start gap-2">
+            {/* Time */}
+            <span className="shrink-0 text-[10px] font-bold text-[#6B7280] bg-[#F3F4F6] px-2 py-1 rounded-lg mt-0.5 tabular-nums whitespace-nowrap">
+              {formatTime(item.time)}
             </span>
-          )}
 
-          {/* Activity type emoji */}
-          <span className="text-base shrink-0 leading-none mt-0.5">
-            {getTypeEmoji(item.type)}
-          </span>
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              {/* Badges row */}
+              <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                {/* Type badge */}
+                <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>
+                  <span className="text-[11px]">{item.thumbnail ?? cfg.emoji}</span>
+                  {cfg.label}
+                </span>
+                {/* Highlight */}
+                {item.highlight && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FF6B35] text-white">
+                    ⭐ Must-Do
+                  </span>
+                )}
+                {/* Booking required */}
+                {item.bookingRequired && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                    📅 Book ahead
+                  </span>
+                )}
+                {/* Closed days */}
+                {item.closedOn.length > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">
+                    ⚠️ Closed {item.closedOn.join(", ")}
+                  </span>
+                )}
+              </div>
 
-          {/* Text details */}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1A1A2E] leading-snug">
-              {item.title}
-            </p>
-            {item.location && (
-              <p className="text-xs text-[#9CA3AF] mt-0.5 truncate">
-                📍 {item.location}
+              {/* Activity name */}
+              <p className="text-sm font-semibold text-[#1A1A2E] leading-snug">
+                {item.activity}
               </p>
-            )}
+
+              {/* Opening hours */}
+              {item.openingHours && (
+                <p className="text-xs text-[#6B7280] mt-1 flex items-center gap-1">
+                  <span>🕐</span>
+                  <span>{item.openingHours}</span>
+                </p>
+              )}
+
+              {/* Cost + expand toggle */}
+              <div className="flex items-center justify-between mt-2">
+                {item.costLocal != null ? (
+                  <span className={`text-xs font-bold ${item.costLocal === 0 ? "text-[#06D6A0]" : "text-[#1A1A2E]"}`}>
+                    {formatCost(item.costLocal, item.localCurrency)}
+                    {item.costLocal > 0 && <span className="text-[#9CA3AF] font-normal"> /person</span>}
+                  </span>
+                ) : (
+                  <span />
+                )}
+                {hasExtra && (
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((v) => !v)}
+                    className="text-[10px] font-semibold text-[#FF6B35] hover:opacity-80 transition-opacity"
+                  >
+                    {expanded ? "Less ▲" : "Tips & Info ▼"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Expanded details */}
+        {expanded && hasExtra && (
+          <div className="border-t border-black/5 px-3.5 py-3 space-y-2.5 bg-[#FAFAFA]">
             {item.notes && (
-              <p className="text-xs text-[#9CA3AF] mt-0.5 italic leading-relaxed">
-                {item.notes}
-              </p>
+              <div>
+                <p className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wide mb-1">About</p>
+                <p className="text-xs text-[#4B5563] leading-relaxed">{item.notes}</p>
+              </div>
+            )}
+            {item.tip && (
+              <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+                <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wide mb-1">💡 Insider Tip</p>
+                <p className="text-xs text-amber-900 leading-relaxed">{item.tip}</p>
+              </div>
+            )}
+            {item.bookingRequired && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                <p className="text-xs text-blue-700 font-semibold">📅 Advance booking required — check the tip above for how far ahead to book.</p>
+              </div>
             )}
           </div>
-
-          {/* Cost */}
-          {item.estimatedCost != null && (
-            <span className="shrink-0 text-xs font-semibold text-[#06D6A0] mt-0.5">
-              {item.currency ?? ""} {item.estimatedCost.toLocaleString()}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DayCard({ day }: { day: ItineraryDay }) {
-  const sortedItems = day.items
-    .slice()
-    .sort((a, b) => a.order - b.order);
-
-  return (
-    <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.08)] border border-black/5 overflow-hidden">
-      {/* Day header */}
-      <div className="px-4 py-3.5 flex items-center gap-3 border-b border-[#F3F4F6]">
-        {/* Day number badge */}
-        <div className="w-9 h-9 rounded-full bg-[#FF6B35] flex items-center justify-center shrink-0">
-          <span className="text-white text-xs font-bold">{day.dayNumber}</span>
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-[#1A1A2E] leading-tight">
-            {day.title ? day.title : `Day ${day.dayNumber}`}
-          </p>
-          <p className="text-xs text-[#9CA3AF]">{formatDayDate(day.date)}</p>
-        </div>
-
-        <span className="text-xs text-[#9CA3AF] shrink-0">
-          {sortedItems.length} activit{sortedItems.length === 1 ? "y" : "ies"}
-        </span>
-      </div>
-
-      {/* Timeline items */}
-      <div className="px-4 pt-3.5 pb-2">
-        {sortedItems.length === 0 ? (
-          <p className="text-xs text-[#9CA3AF] py-3 text-center">
-            No activities planned for this day
-          </p>
-        ) : (
-          sortedItems.map((item, idx) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              isLast={idx === sortedItems.length - 1}
-            />
-          ))
         )}
       </div>
     </div>
   );
 }
+
+// ── Day card ──────────────────────────────────────────────────────────────────
+
+function DayCard({ day }: { day: ItineraryDay }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const sorted = day.items.slice().sort((a, b) => a.sortOrder - b.sortOrder);
+  const highlights = sorted.filter((i) => i.highlight).length;
+  const totalCost = sorted.reduce((sum, i) => sum + (i.costLocal ?? 0), 0);
+  const costCurrency = sorted.find((i) => i.localCurrency)?.localCurrency ?? null;
+
+  return (
+    <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.07)] border border-black/5 overflow-hidden">
+      {/* Day header */}
+      <button
+        type="button"
+        onClick={() => setCollapsed((v) => !v)}
+        className="w-full text-left px-4 pt-4 pb-3 border-b border-[#F3F4F6] active:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-start gap-3">
+          {/* Day number bubble */}
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FF6B35] to-[#FF8C5A] flex flex-col items-center justify-center shrink-0 shadow-sm">
+            <span className="text-white text-[9px] font-bold uppercase leading-none">Day</span>
+            <span className="text-white text-base font-black leading-none">{day.dayNumber}</span>
+          </div>
+
+          <div className="flex-1 min-w-0 pt-0.5">
+            <h3 className="text-sm font-bold text-[#1A1A2E] leading-snug">{day.title}</h3>
+            <p className="text-[11px] text-[#9CA3AF] mt-0.5">{formatDayDate(day.date)}</p>
+            {day.summary && (
+              <p className="text-xs text-[#6B7280] mt-1 leading-relaxed line-clamp-2">{day.summary}</p>
+            )}
+          </div>
+
+          <span className="text-xs text-[#9CA3AF] shrink-0 pt-1">{collapsed ? "▼" : "▲"}</span>
+        </div>
+
+        {/* Stats row */}
+        <div className="flex items-center gap-3 mt-2.5 ml-13 pl-[52px]">
+          {day.accommodation && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full">
+              🏨 {day.accommodation}
+            </span>
+          )}
+          {highlights > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#FF6B35] bg-[#FF6B35]/8 px-2.5 py-1 rounded-full">
+              ⭐ {highlights} highlight{highlights > 1 ? "s" : ""}
+            </span>
+          )}
+          {totalCost > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#1A1A2E] bg-[#F0EEE9] px-2.5 py-1 rounded-full ml-auto">
+              ~{formatCost(totalCost, costCurrency)} est.
+            </span>
+          )}
+        </div>
+      </button>
+
+      {/* Timeline items */}
+      {!collapsed && (
+        <div className="px-4 pt-4 pb-2">
+          {sorted.length === 0 ? (
+            <p className="text-xs text-[#9CA3AF] py-4 text-center">No activities for this day</p>
+          ) : (
+            sorted.map((item, idx) => (
+              <ItemCard key={item.id} item={item} isLast={idx === sorted.length - 1} />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Summary bar ───────────────────────────────────────────────────────────────
+
+function TripSummaryBar({ days }: { days: ItineraryDay[] }) {
+  const totalItems = days.reduce((s, d) => s + d.items.length, 0);
+  const highlights = days.reduce((s, d) => s + d.items.filter((i) => i.highlight).length, 0);
+  const needBooking = days.reduce((s, d) => s + d.items.filter((i) => i.bookingRequired).length, 0);
+
+  return (
+    <div className="bg-gradient-to-r from-[#1A1A2E] to-[#2D2D44] rounded-2xl px-4 py-3.5 flex items-center justify-between gap-2">
+      <div className="text-center">
+        <p className="text-white font-black text-lg leading-none">{days.length}</p>
+        <p className="text-white/60 text-[10px] font-semibold mt-0.5">Days</p>
+      </div>
+      <div className="w-px h-8 bg-white/15" />
+      <div className="text-center">
+        <p className="text-white font-black text-lg leading-none">{totalItems}</p>
+        <p className="text-white/60 text-[10px] font-semibold mt-0.5">Activities</p>
+      </div>
+      <div className="w-px h-8 bg-white/15" />
+      <div className="text-center">
+        <p className="text-[#FF6B35] font-black text-lg leading-none">{highlights}</p>
+        <p className="text-white/60 text-[10px] font-semibold mt-0.5">Highlights</p>
+      </div>
+      <div className="w-px h-8 bg-white/15" />
+      <div className="text-center">
+        <p className="text-amber-400 font-black text-lg leading-none">{needBooking}</p>
+        <p className="text-white/60 text-[10px] font-semibold mt-0.5">Book Ahead</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────
 
 export function ItineraryTab({ tripId }: { tripId: string }) {
   const { data, isLoading, isError } = useQuery({
@@ -193,11 +316,11 @@ export function ItineraryTab({ tripId }: { tripId: string }) {
     queryFn: () => api.get<ItineraryResponse>(`/trips/${tripId}/itinerary`),
   });
 
-  const days = data?.data ?? [];
+  const days = (data?.data ?? []).slice().sort((a, b) => a.dayNumber - b.dayNumber);
 
   if (isLoading) {
     return (
-      <div className="flex justify-center py-14">
+      <div className="flex justify-center py-16">
         <Spinner />
       </div>
     );
@@ -205,7 +328,7 @@ export function ItineraryTab({ tripId }: { tripId: string }) {
 
   if (isError) {
     return (
-      <div className="text-center py-10">
+      <div className="text-center py-12">
         <div className="text-4xl mb-3">⚠️</div>
         <p className="text-[#9CA3AF] text-sm">Failed to load itinerary</p>
       </div>
@@ -215,12 +338,10 @@ export function ItineraryTab({ tripId }: { tripId: string }) {
   if (days.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="text-5xl mb-4">✈️</div>
-        <p className="text-[#1A1A2E] font-bold text-base mb-1">
-          Your itinerary is empty
-        </p>
-        <p className="text-[#9CA3AF] text-sm leading-relaxed max-w-[220px]">
-          Generate an AI plan to fill your itinerary
+        <div className="text-6xl mb-5">✈️</div>
+        <p className="text-[#1A1A2E] font-bold text-base mb-2">Your itinerary is empty</p>
+        <p className="text-[#9CA3AF] text-sm leading-relaxed max-w-[240px]">
+          Add your wishlist &amp; places to visit in the <span className="font-semibold text-[#FF6B35]">Wishlist</span> tab, then tap <span className="font-semibold text-[#FF6B35]">Generate AI Plan</span> above.
         </p>
       </div>
     );
@@ -228,12 +349,10 @@ export function ItineraryTab({ tripId }: { tripId: string }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {days
-        .slice()
-        .sort((a, b) => a.dayNumber - b.dayNumber)
-        .map((day) => (
-          <DayCard key={day.id} day={day} />
-        ))}
+      <TripSummaryBar days={days} />
+      {days.map((day) => (
+        <DayCard key={day.id} day={day} />
+      ))}
     </div>
   );
 }

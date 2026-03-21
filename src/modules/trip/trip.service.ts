@@ -486,6 +486,8 @@ export const tripService = {
       dayNumber: day.dayNumber,
       date: day.date,
       title: day.title,
+      summary: day.summary,
+      accommodation: day.accommodation,
       createdAt: day.createdAt,
       updatedAt: day.updatedAt,
       items: day.items.map((item) => ({
@@ -495,6 +497,11 @@ export const tripService = {
         time: item.time,
         activity: item.activity,
         type: item.type,
+        highlight: item.highlight,
+        bookingRequired: item.bookingRequired,
+        closedOn: item.closedOn,
+        openingHours: item.openingHours,
+        tip: item.tip,
         latitude: item.latitude,
         longitude: item.longitude,
         costLocal: toNumber(item.costLocal),
@@ -978,9 +985,11 @@ export const tripService = {
     const existingBookings = trip.bookings.map((b) => ({
       type: b.type,
       name: b.name ?? undefined,
+      confirmationRef: b.confirmationRef ?? undefined,
       date: b.departureDate?.toISOString().split("T")[0] ?? b.checkIn?.toISOString().split("T")[0],
       time: b.departureTime ?? undefined,
-      location: b.fromLocation ?? b.name ?? undefined,
+      location: b.fromLocation ?? b.toLocation ?? b.name ?? undefined,
+      cost: b.cost ? Number(b.cost) : undefined,
     }));
 
     const tripPrefs = (trip.preferences ?? {}) as Record<string, unknown>;
@@ -1000,6 +1009,8 @@ export const tripService = {
         focusAreas: tripPrefs.focusAreas as string[] | undefined,
         avoidCrowds: tripPrefs.avoidCrowds as boolean | undefined,
       },
+      wishlist: (tripPrefs.wishlist as string[] | undefined) ?? [],
+      placesToVisit: (tripPrefs.placesToVisit as string[] | undefined) ?? [],
       existingBookings,
       budget: trip.budgetTotal ? Number(trip.budgetTotal) : undefined,
     });
@@ -1025,12 +1036,19 @@ export const tripService = {
             dayNumber: day.dayNumber,
             date: new Date(day.date),
             title: day.title,
+            summary: day.summary || null,
+            accommodation: day.accommodation || null,
             items: {
               create: day.items.map((item, idx) => ({
                 sortOrder: idx,
                 time: item.time,
                 activity: item.activity,
                 type: toActivityType(item.type),
+                highlight: item.highlight ?? false,
+                bookingRequired: item.bookingRequired ?? false,
+                closedOn: item.closedOn ?? [],
+                openingHours: item.openingHours ?? null,
+                tip: item.tip ?? null,
                 latitude: item.latitude ?? null,
                 longitude: item.longitude ?? null,
                 costLocal: item.costLocal ?? null,

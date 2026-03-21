@@ -14,6 +14,8 @@ export const createTripSchema = z.object({
       pace: z.enum(["slow", "moderate", "fast"]).optional(),
       focusAreas: z.array(z.string()).optional(),
       avoidCrowds: z.boolean().optional(),
+      wishlist: z.array(z.string().max(200)).optional(),
+      placesToVisit: z.array(z.string().max(200)).optional(),
     })
     .optional(),
   bannerConfig: z

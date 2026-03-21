@@ -79,12 +79,16 @@ export function startAIGenerateWorker() {
           };
         }),
         preferences: (trip.preferences as Record<string, unknown> | null) ?? {},
+        wishlist: ((trip.preferences as Record<string, unknown> | null)?.wishlist as string[] | undefined) ?? [],
+        placesToVisit: ((trip.preferences as Record<string, unknown> | null)?.placesToVisit as string[] | undefined) ?? [],
         existingBookings: trip.bookings.map((b) => ({
           type: b.type,
           name: b.name ?? undefined,
+          confirmationRef: b.confirmationRef ?? undefined,
           date: b.departureDate?.toISOString().split("T")[0],
           time: b.departureTime ?? undefined,
           location: b.fromLocation ?? undefined,
+          cost: b.cost ? Number(b.cost) : undefined,
         })),
         budget: trip.budgetTotal ? Number(trip.budgetTotal) : undefined,
       };

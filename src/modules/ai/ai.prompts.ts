@@ -2,103 +2,188 @@ import type { AIGenerateRequest } from "./ai.provider.js";
 
 export function buildTravelPrompt(req: AIGenerateRequest): string {
   const tripDays = getDayCount(req.startDate, req.endDate);
+  const dateRange = `${req.startDate} to ${req.endDate}`;
 
-  const travelerDescriptions = req.travelers
-    .map((t) => {
-      const details = [
-        t.age ? `age ${t.age}` : null,
-        t.travelStyle ? `${t.travelStyle} traveler` : null,
-        t.dietPref ? `diet: ${t.dietPref}` : null,
-        t.allergies ? `allergies: ${t.allergies}` : null,
-        t.interests?.length ? `interests: ${t.interests.join(", ")}` : null,
-        t.accessibilityNeeds?.length ? `accessibility: ${t.accessibilityNeeds.join(", ")}` : null,
-        `starting from ${t.startCity}`,
-      ]
-        .filter(Boolean)
-        .join(", ");
-      return `- ${t.name} (${details})`;
-    })
-    .join("\n");
+  // ── Travelers ─────────────────────────────────────────────────────────────
+  const travelerLines = req.travelers.map((t) => {
+    const details: string[] = [
+      `Age: ${t.age}`,
+      `Starting from: ${t.startCity}`,
+      t.travelStyle ? `Travel style: ${t.travelStyle}` : null,
+      t.dietPref ? `Diet: ${t.dietPref}` : null,
+      t.allergies ? `Allergies: ${t.allergies}` : null,
+      t.interests?.length ? `Interests: ${t.interests.join(", ")}` : null,
+      t.accessibilityNeeds?.length ? `Accessibility needs: ${t.accessibilityNeeds.join(", ")}` : null,
+    ].filter(Boolean) as string[];
+    return `  • ${t.name}: ${details.join(" | ")}`;
+  });
 
-  const minorDescriptions =
+  const minorLines =
     req.minors.length > 0
-      ? req.minors
-          .map((m) => `- ${m.name} (age ${m.age}${m.specialNeeds ? `, ${m.specialNeeds}` : ""})`)
-          .join("\n")
-      : "None";
+      ? req.minors.map((m) => {
+          const parts = [`Age: ${m.age}`];
+          if (m.specialNeeds) parts.push(`Special needs: ${m.specialNeeds}`);
+          if (m.favActivities?.length) parts.push(`Loves: ${m.favActivities.join(", ")}`);
+          return `  • ${m.name}: ${parts.join(" | ")}`;
+        })
+      : ["  None"];
 
-  const bookingsInfo =
+  // ── Existing bookings ─────────────────────────────────────────────────────
+  const bookingLines =
     req.existingBookings.length > 0
-      ? req.existingBookings
-          .map(
-            (b) =>
-              `- ${b.type}: ${b.name ?? ""} on ${b.date ?? "TBD"} at ${b.time ?? "TBD"} (${b.location ?? ""})`,
-          )
-          .join("\n")
-      : "None";
+      ? req.existingBookings.map((b) => {
+          const parts = [`[${b.type.toUpperCase()}]`];
+          if (b.name) parts.push(b.name);
+          if (b.confirmationRef) parts.push(`Ref: ${b.confirmationRef}`);
+          if (b.date) parts.push(`Date: ${b.date}`);
+          if (b.time) parts.push(`Time: ${b.time}`);
+          if (b.location) parts.push(`Location: ${b.location}`);
+          if (b.cost) parts.push(`Cost: ${b.cost} ${req.currency}`);
+          return `  • ${parts.join(" | ")}`;
+        })
+      : ["  None confirmed yet"];
 
-  return `You are an expert travel planner creating a detailed ${tripDays}-day itinerary.
+  // ── Wishlist ──────────────────────────────────────────────────────────────
+  const wishlistLines =
+    req.wishlist.length > 0
+      ? req.wishlist.map((w) => `  • ${w}`)
+      : ["  None specified — use your expertise for the destination"];
 
-TRIP DETAILS:
-- Destination: ${req.destination}${req.subDestinations.length ? ` (including ${req.subDestinations.join(", ")})` : ""}
-- Dates: ${req.startDate} to ${req.endDate} (${tripDays} days)
-- Currency: ${req.currency}${req.budget ? `\n- Budget: ${req.budget} ${req.currency}` : ""}
+  // ── Places to visit ───────────────────────────────────────────────────────
+  const placesLines =
+    req.placesToVisit.length > 0
+      ? req.placesToVisit.map((p) => `  • ${p}`)
+      : ["  None specified — recommend must-sees for the destination"];
 
-TRAVELERS:
-${travelerDescriptions}
+  // ── Preferences ───────────────────────────────────────────────────────────
+  const prefLines = [
+    `  • Pace: ${req.preferences.pace ?? "moderate"} — ${getPaceDescription(req.preferences.pace)}`,
+    req.preferences.focusAreas?.length
+      ? `  • Focus areas: ${req.preferences.focusAreas.join(", ")}`
+      : "  • Focus areas: balanced mix of culture, food, sightseeing, and leisure",
+    `  • Avoid crowds: ${req.preferences.avoidCrowds ? "Yes — prefer off-peak timings and lesser-known spots" : "No preference"}`,
+  ];
 
-CHILDREN/MINORS:
-${minorDescriptions}
+  // ── Example item (to show format) ─────────────────────────────────────────
+  const exampleItem = `{
+          "time": "09:30",
+          "activity": "Fushimi Inari Taisha — hike through 10,000 vermilion torii gates up Mt Inari",
+          "type": "sightseeing",
+          "highlight": true,
+          "bookingRequired": false,
+          "closedOn": [],
+          "openingHours": "24 hours (shrine open always, inner areas busier 08:00-16:00)",
+          "tip": "Arrive before 8am to avoid crowds. Wear comfortable shoes — full hike is 4km. Look for fox (kitsune) statues throughout.",
+          "thumbnail": "⛩️",
+          "notes": "UNESCO-listed site, free entry. The torii gates were donated by businesses seeking good fortune.",
+          "costLocal": 0,
+          "localCurrency": "JPY",
+          "latitude": 34.9671,
+          "longitude": 135.7727
+        }`;
 
-PREFERENCES:
-- Pace: ${req.preferences.pace ?? "moderate"}
-- Focus areas: ${req.preferences.focusAreas?.join(", ") ?? "balanced mix"}
-- Avoid crowds: ${req.preferences.avoidCrowds ? "yes" : "no"}
+  return `You are a world-class travel planner creating a detailed, personalized ${tripDays}-day itinerary for a family trip to ${req.destination}.
 
-EXISTING BOOKINGS (must be incorporated):
-${bookingsInfo}
+════════════════════════════════════════════════════════════
+TRIP OVERVIEW
+════════════════════════════════════════════════════════════
+Destination: ${req.destination}${req.subDestinations.length ? `\nSub-destinations/regions: ${req.subDestinations.join(", ")}` : ""}
+Dates: ${dateRange} (${tripDays} days)
+Currency: ${req.currency}${req.budget ? `\nTotal budget: ${req.budget.toLocaleString()} ${req.currency}` : ""}
 
-Please create a comprehensive travel plan. Respond ONLY with a valid JSON object (no markdown, no explanation) in exactly this format:
+════════════════════════════════════════════════════════════
+TRAVELERS
+════════════════════════════════════════════════════════════
+Adults (${req.travelers.length}):
+${travelerLines.join("\n")}
+
+Children/Minors (${req.minors.length}):
+${minorLines.join("\n")}
+
+════════════════════════════════════════════════════════════
+CONFIRMED BOOKINGS (must be incorporated exactly)
+════════════════════════════════════════════════════════════
+${bookingLines.join("\n")}
+
+IMPORTANT: For confirmed flights/hotels, use the exact times, dates, and names provided. Build the itinerary around these fixed anchors.
+
+════════════════════════════════════════════════════════════
+TRAVELER PREFERENCES & TRAVEL STYLE
+════════════════════════════════════════════════════════════
+${prefLines.join("\n")}
+
+════════════════════════════════════════════════════════════
+WISHLIST — MUST INCLUDE (experiences/foods they specifically want)
+════════════════════════════════════════════════════════════
+${wishlistLines.join("\n")}
+
+════════════════════════════════════════════════════════════
+PLACES TO VISIT — PRIORITISE THESE
+════════════════════════════════════════════════════════════
+${placesLines.join("\n")}
+
+════════════════════════════════════════════════════════════
+PLANNING REQUIREMENTS
+════════════════════════════════════════════════════════════
+1. STRUCTURE: Exactly ${tripDays} days (${req.startDate} through ${req.endDate}), 5-8 items per day
+2. TIMING: All activities must have realistic times. Respect travel time between locations. Don't schedule impossible back-to-back activities.
+3. MEALS: Include breakfast, lunch, and dinner for every day. Recommend specific restaurants with local specialties. Note dietary requirements.
+4. ACCOMMODATION: Note where the group is staying each night. First item on arrival day should be the flight/transport. Last item on departure day should be check-out and airport transfer.
+5. HIGHLIGHTS: Mark 2-3 genuinely unmissable items per day as highlights (highlight: true). These should be the signature experiences of the trip.
+6. BOOKING WARNINGS: If any attraction, restaurant, or experience requires advance booking, set bookingRequired: true. Be specific in the tip field about how far in advance to book.
+7. CLOSURE WARNINGS: If any place is typically closed on specific days of the week (e.g., many Japanese museums close Mondays, some shrines have limited hours), populate closedOn with day names like ["Monday"]. Cross-check the actual day of week for each item's date.
+8. OPENING HOURS: Always include opening hours for attractions, temples, museums, and restaurants when known. Format as "HH:MM - HH:MM" or human readable like "Daily 09:00-17:00, Last entry 16:30".
+9. TIPS: Every activity should have a practical, insider tip — not generic. Include navigation tips, what to order, best time to visit, what to wear, what not to miss inside, local customs, etc.
+10. COSTS: Use local destination currency. Include realistic per-person costs. Mark free activities as costLocal: 0.
+11. KIDS: Since children are travelling, mark every activity with its family-friendliness in the notes. Suggest kid-specific things to do or see within each location.
+12. DIETARY: Respect all dietary preferences across all meal recommendations.
+13. GEOGRAPHY: Group nearby activities on the same day to minimise unnecessary travel. Use Google Maps logic for route efficiency.
+14. AUTHENTIC: Recommend local restaurants over tourist traps. Include street food, markets, hidden gems alongside iconic landmarks.
+
+════════════════════════════════════════════════════════════
+RESPONSE FORMAT — JSON ONLY, NO MARKDOWN
+════════════════════════════════════════════════════════════
+Respond with ONLY a valid JSON object. No explanation, no markdown code blocks, no preamble.
+
 {
   "days": [
     {
       "dayNumber": 1,
       "date": "YYYY-MM-DD",
-      "title": "Arrival & Exploration",
+      "title": "Concise evocative day title (max 50 chars)",
+      "summary": "One sentence capturing the essence of the day and what makes it special.",
+      "accommodation": "Name of hotel/ryokan/accommodation where group stays tonight (or 'Transit' if travelling overnight)",
       "items": [
-        {
-          "time": "HH:MM",
-          "activity": "Activity name and description",
-          "type": "hotel|sightseeing|dining|transport|adventure|culture|wellness|shopping|other",
-          "latitude": 12.345,
-          "longitude": 67.890,
-          "costLocal": 500,
-          "localCurrency": "INR",
-          "thumbnail": "🏨",
-          "notes": "Optional tips",
-          "accessibility": []
-        }
+        ${exampleItem}
       ]
     }
   ],
   "checklist": [
-    { "text": "Pack sunscreen", "category": "packing" },
-    { "text": "Book airport transfer", "category": "transport" }
+    {
+      "text": "Specific actionable item",
+      "category": "documents|packing|health|transport|money|bookings|tech|culture|other"
+    }
   ],
   "transportNotes": [
-    { "icon": "✈️", "title": "Flight", "detail": "Book 2 months in advance for best prices" }
+    {
+      "icon": "✈️",
+      "title": "Transport segment title",
+      "detail": "Detailed practical info including costs, booking tips, journey time, alternatives"
+    }
   ]
 }
 
-Important:
-- Create exactly ${tripDays} days
-- Include 4-7 items per day with realistic times
-- First item should be arrival/check-in on day 1, last item checkout on final day
-- Include meals (breakfast, lunch, dinner) spread throughout days
-- Costs should be in local destination currency
-- Use emoji for thumbnails
-- Keep activities appropriate for all travelers (especially minors if present)
-- Consider dietary restrictions and accessibility needs`;
+Item type values: hotel | sightseeing | dining | transport | adventure | culture | wellness | shopping | other
+
+Generate a rich, comprehensive, highly practical itinerary that this family will actually use and love. Every item should feel personalised to THESE specific travelers, not generic.`;
+}
+
+function getPaceDescription(pace?: string): string {
+  switch (pace) {
+    case "slow": return "relaxed days, 3-4 activities max, plenty of rest time, linger at each spot";
+    case "fast": return "action-packed days, 6-8 activities, efficient transitions, maximise experiences";
+    default: return "balanced days, 5-6 activities, comfortable pace with some breathing room";
+  }
 }
 
 function getDayCount(startDate: string, endDate: string): number {

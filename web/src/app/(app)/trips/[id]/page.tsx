@@ -20,6 +20,7 @@ import { ChecklistTab } from "../../../../components/trip/ChecklistTab";
 import { BudgetTab } from "../../../../components/trip/BudgetTab";
 import { BookingsTab } from "../../../../components/trip/BookingsTab";
 import { TravelersTab } from "../../../../components/trip/TravelersTab";
+import { WishlistTab } from "../../../../components/trip/WishlistTab";
 
 interface TripMember {
   id: string;
@@ -41,6 +42,12 @@ interface TripDetail {
   currency: string;
   aiProvider: string;
   bannerConfig?: { emoji?: string; gradient?: string } | null;
+  preferences?: {
+    wishlist?: string[];
+    placesToVisit?: string[];
+    pace?: string;
+    focusAreas?: string[];
+  } | null;
   members: TripMember[];
   budgetTotal?: number | null;
 }
@@ -79,10 +86,11 @@ function getDurationDays(start: string, end: string): number {
   return Math.max(1, Math.ceil(ms / (1000 * 60 * 60 * 24)) + 1);
 }
 
-type TabKey = "itinerary" | "people" | "bookings" | "checklist" | "budget";
+type TabKey = "itinerary" | "wishlist" | "people" | "bookings" | "checklist" | "budget";
 
 const TABS: Array<{ key: TabKey; label: string; emoji: string }> = [
   { key: "itinerary", label: "Itinerary", emoji: "🗺️" },
+  { key: "wishlist",  label: "Wishlist",  emoji: "🎯" },
   { key: "people",    label: "People",    emoji: "👥" },
   { key: "bookings",  label: "Bookings",  emoji: "🎫" },
   { key: "checklist", label: "Checklist", emoji: "✅" },
@@ -342,6 +350,13 @@ export default function TripDetailPage() {
         {/* ── Tab content ─────────────────────────── */}
         <div className="px-4 pt-1 pb-8">
           {activeTab === "itinerary" && <ItineraryTab  tripId={tripId} />}
+          {activeTab === "wishlist"  && (
+            <WishlistTab
+              tripId={tripId}
+              wishlist={trip.preferences?.wishlist ?? []}
+              placesToVisit={trip.preferences?.placesToVisit ?? []}
+            />
+          )}
           {activeTab === "people"    && <TravelersTab  tripId={tripId} />}
           {activeTab === "bookings"  && <BookingsTab   tripId={tripId} />}
           {activeTab === "checklist" && <ChecklistTab  tripId={tripId} />}

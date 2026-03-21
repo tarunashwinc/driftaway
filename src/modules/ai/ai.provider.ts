@@ -45,12 +45,16 @@ export interface AIGenerateRequest {
     focusAreas?: string[];
     avoidCrowds?: boolean;
   };
+  wishlist: string[];
+  placesToVisit: string[];
   existingBookings: Array<{
     type: string;
     name?: string;
+    confirmationRef?: string;
     date?: string;
     time?: string;
     location?: string;
+    cost?: number;
   }>;
   budget?: number;
 }
@@ -60,10 +64,17 @@ export interface AIGenerateResponse {
     dayNumber: number;
     date: string;
     title: string;
+    summary: string;
+    accommodation: string;
     items: Array<{
       time: string;
       activity: string;
       type: string;
+      highlight: boolean;
+      bookingRequired: boolean;
+      closedOn: string[];
+      openingHours: string | null;
+      tip: string | null;
       latitude?: number;
       longitude?: number;
       costLocal?: number;
@@ -150,16 +161,24 @@ class OpenAIAdapter implements AIProviderAdapter {
     const prompt = buildTravelPrompt(request);
     const completion = await this.client.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: 8192,
+      max_tokens: 16384,
       messages: [
-        { role: "system", content: "You are an expert travel planner. Always respond with valid JSON." },
+        { role: "system", content: "You are an expert travel planner. Always respond with valid JSON only." },
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
     });
-    const text = completion.choices[0]?.message?.content ?? "{}";
+    const choice = completion.choices[0];
+    if (choice?.finish_reason === "length") {
+      console.error("[OpenAI] Response truncated (finish_reason=length). Token limit hit.");
+    }
+    const text = choice?.message?.content ?? "{}";
     const tokensUsed = completion.usage?.total_tokens ?? 0;
-    return { ...parseAIResponse(text), tokensUsed };
+    const parsed = parseAIResponse(text);
+    if (parsed.days.length === 0) {
+      console.error("[OpenAI] Parsed 0 days. finish_reason:", choice?.finish_reason, "Text length:", text.length, "Start:", text.substring(0, 200));
+    }
+    return { ...parsed, tokensUsed };
   }
 
   async chat(history: Array<{ role: string; content: string }>, userMessage: string): Promise<string> {

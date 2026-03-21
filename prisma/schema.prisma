@@ -246,6 +246,8 @@ model ItineraryDay {
   dayNumber   Int       @map("day_number")
   date        DateTime  @db.Date
   title       String    @db.VarChar(200)
+  summary     String?   @db.Text             // one-line summary of the day
+  accommodation String? @db.VarChar(200)     // hotel/accommodation name for this night
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -261,18 +263,23 @@ model ItineraryItem {
   dayId           String        @map("day_id") @db.Uuid
   sortOrder       Int           @map("sort_order")
   time            String        @db.VarChar(5) // HH:MM
-  activity        String        @db.VarChar(300)
+  activity        String        @db.VarChar(500)
   type            ActivityType
   latitude        Float?
   longitude       Float?
-  costLocal       Decimal?      @map("cost_local") @db.Decimal(12, 2) // in local currency
-  costConverted   Decimal?      @map("cost_converted") @db.Decimal(12, 2) // in trip currency
+  costLocal       Decimal?      @map("cost_local") @db.Decimal(12, 2)
+  costConverted   Decimal?      @map("cost_converted") @db.Decimal(12, 2)
   localCurrency   String?       @map("local_currency") @db.VarChar(3)
-  thumbnail       String?       @db.Text // emoji or image URL
+  thumbnail       String?       @db.Text
   notes           String?       @db.Text
+  tip             String?       @db.Text              // practical tip separate from notes
+  highlight       Boolean       @default(false) @map("is_highlight")
+  bookingRequired Boolean       @default(false) @map("booking_required")
+  closedOn        String[]      @map("closed_on")     // e.g. ["Monday","Tuesday"]
+  openingHours    String?       @map("opening_hours") @db.VarChar(100)
   bookingId       String?       @map("booking_id") @db.Uuid
-  participants    String[]      @db.Uuid // traveler IDs; empty = all
-  accessibility   String[]      // tags: wheelchair, kid-friendly, etc.
+  participants    String[]      @db.Uuid
+  accessibility   String[]
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
 
