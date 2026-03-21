@@ -135,6 +135,13 @@ export interface TransportNoteSummary {
 
 // ─── TripSummary — used in list view ───
 
+export interface TripSummaryMember {
+  id: string;
+  userId: string;
+  role: TripRole;
+  user: { id: string; name: string; avatarUrl: string | null };
+}
+
 export interface TripSummary {
   id: string;
   title: string;
@@ -149,6 +156,7 @@ export interface TripSummary {
   status: TripStatus;
   bannerConfig: TripBannerConfig | null;
   memberCount: number;
+  members: TripSummaryMember[];
   myRole: TripRole;
   createdAt: Date;
   updatedAt: Date;

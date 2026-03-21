@@ -53,10 +53,10 @@ export const userService = {
           emergencyContact: data.emergencyContact ?? undefined,
         }),
         ...(data.preferences !== undefined && {
-          preferences: data.preferences ?? undefined,
+          preferences: (data.preferences ?? undefined) as import("@prisma/client").Prisma.InputJsonValue | undefined,
         }),
         ...(data.frequentFlyerIds !== undefined && {
-          frequentFlyerIds: data.frequentFlyerIds ?? undefined,
+          frequentFlyerIds: (data.frequentFlyerIds ?? undefined) as import("@prisma/client").Prisma.InputJsonValue | undefined,
         }),
       },
       select: {

@@ -21,6 +21,7 @@ interface TripSummary {
   currency: string;
   bannerConfig?: { emoji?: string; gradient?: string } | null;
   members: TripMember[];
+  memberCount: number;
 }
 
 interface TripsResponse {

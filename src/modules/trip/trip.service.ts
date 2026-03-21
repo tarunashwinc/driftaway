@@ -100,6 +100,12 @@ export const tripService = {
           trip: {
             include: {
               _count: { select: { members: true } },
+              members: {
+                take: 5,
+                include: {
+                  user: { select: { id: true, name: true, avatarUrl: true } },
+                },
+              },
             },
           },
         },
@@ -123,6 +129,12 @@ export const tripService = {
       status: m.trip.status,
       bannerConfig: (m.trip.bannerConfig as Record<string, unknown> | null) ?? null,
       memberCount: m.trip._count.members,
+      members: m.trip.members.map((tm) => ({
+        id: tm.id,
+        userId: tm.userId,
+        role: tm.role,
+        user: { id: tm.user.id, name: tm.user.name, avatarUrl: tm.user.avatarUrl },
+      })),
       myRole: m.role,
       createdAt: m.trip.createdAt,
       updatedAt: m.trip.updatedAt,
@@ -908,5 +920,27 @@ export const tripService = {
       byCategory,
       memberSplit,
     };
+  },
+
+  // List documents attached to a trip
+  async listTripDocuments(tripId: string, userId: string) {
+    await requireMember(tripId, userId);
+    const docs = await prisma.document.findMany({
+      where: { tripId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        type: true,
+        name: true,
+        s3Key: true,
+        mimeType: true,
+        sizeBytes: true,
+        expiryDate: true,
+        metadata: true,
+        createdAt: true,
+        user: { select: { id: true, name: true } },
+      },
+    });
+    return docs;
   },
 };

@@ -349,8 +349,16 @@ export const tripController = {
     reply: FastifyReply,
   ): Promise<void> {
     const user = getUser(request);
-    // Verify membership
     await tripService.getChecklist(request.params.id, user.userId);
     reply.send({ success: true, data: { message: "WhatsApp sync queued" } });
+  },
+
+  async listDocuments(
+    request: FastifyRequest<{ Params: TripParams }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const user = getUser(request);
+    const docs = await tripService.listTripDocuments(request.params.id, user.userId);
+    reply.send({ success: true, data: docs });
   },
 };
