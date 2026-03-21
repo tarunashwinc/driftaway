@@ -922,6 +922,155 @@ export const tripService = {
     };
   },
 
+  // Generate AI itinerary plan and persist to DB
+  async generateAIPlan(tripId: string, userId: string, providerOverride?: string) {
+    await requireMember(tripId, userId);
+
+    const trip = await prisma.trip.findFirst({
+      where: { id: tripId, deletedAt: null },
+      include: {
+        members: {
+          include: {
+            user: { select: { id: true, name: true, dateOfBirth: true, preferences: true } },
+          },
+        },
+        tripMinors: { include: { minor: true } },
+        bookings: { orderBy: [{ departureDate: "asc" }, { checkIn: "asc" }] },
+      },
+    });
+    if (!trip) throw new NotFoundError("Trip");
+
+    const { getAIProvider } = await import("../ai/ai.provider.js");
+    const provider = getAIProvider(
+      (providerOverride as import("@prisma/client").AIProvider | undefined) ?? trip.aiProvider,
+    );
+
+    const now = new Date();
+    function calcAge(dob: Date | null): number {
+      if (!dob) return 30;
+      return Math.floor((now.getTime() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
+    }
+
+    const travelers = trip.members.map((m) => {
+      const prefs = (m.user.preferences ?? {}) as Record<string, unknown>;
+      return {
+        name: m.user.name,
+        age: calcAge(m.user.dateOfBirth),
+        dietPref: (prefs.diet as string | undefined),
+        allergies: (prefs.allergies as string | undefined),
+        interests: (prefs.interests as string[] | undefined),
+        travelStyle: (prefs.travelStyle as string | undefined),
+        startCity: m.startCity ?? trip.destination,
+        accessibilityNeeds: (prefs.accessibility as string[] | undefined),
+      };
+    });
+
+    const minors = trip.tripMinors.map((tm) => {
+      const prefs = (tm.minor.preferences ?? {}) as Record<string, unknown>;
+      return {
+        name: tm.minor.name,
+        age: calcAge(tm.minor.dateOfBirth),
+        specialNeeds: tm.minor.specialNeeds ?? undefined,
+        favActivities: (prefs.favActivities as string[] | undefined),
+      };
+    });
+
+    const existingBookings = trip.bookings.map((b) => ({
+      type: b.type,
+      name: b.name ?? undefined,
+      date: b.departureDate?.toISOString().split("T")[0] ?? b.checkIn?.toISOString().split("T")[0],
+      time: b.departureTime ?? undefined,
+      location: b.fromLocation ?? b.name ?? undefined,
+    }));
+
+    const tripPrefs = (trip.preferences ?? {}) as Record<string, unknown>;
+
+    const aiResponse = await provider.generate({
+      tripId,
+      provider: trip.aiProvider,
+      destination: trip.destination,
+      subDestinations: trip.subDestinations,
+      startDate: trip.startDate.toISOString().split("T")[0]!,
+      endDate: trip.endDate.toISOString().split("T")[0]!,
+      currency: trip.currency,
+      travelers,
+      minors,
+      preferences: {
+        pace: tripPrefs.pace as string | undefined,
+        focusAreas: tripPrefs.focusAreas as string[] | undefined,
+        avoidCrowds: tripPrefs.avoidCrowds as boolean | undefined,
+      },
+      existingBookings,
+      budget: trip.budgetTotal ? Number(trip.budgetTotal) : undefined,
+    });
+
+    const VALID_ACTIVITY_TYPES = new Set([
+      "hotel", "sightseeing", "dining", "transport", "adventure",
+      "culture", "wellness", "shopping", "other",
+    ]);
+    function toActivityType(raw: string): import("@prisma/client").ActivityType {
+      return (VALID_ACTIVITY_TYPES.has(raw) ? raw : "other") as import("@prisma/client").ActivityType;
+    }
+
+    // Persist: clear existing days, then insert new ones
+    await prisma.$transaction(async (tx) => {
+      await tx.itineraryDay.deleteMany({ where: { tripId } });
+      await tx.checklistItem.deleteMany({ where: { tripId } });
+      await tx.transportNote.deleteMany({ where: { tripId } });
+
+      for (const day of aiResponse.days) {
+        await tx.itineraryDay.create({
+          data: {
+            tripId,
+            dayNumber: day.dayNumber,
+            date: new Date(day.date),
+            title: day.title,
+            items: {
+              create: day.items.map((item, idx) => ({
+                sortOrder: idx,
+                time: item.time,
+                activity: item.activity,
+                type: toActivityType(item.type),
+                latitude: item.latitude ?? null,
+                longitude: item.longitude ?? null,
+                costLocal: item.costLocal ?? null,
+                localCurrency: item.localCurrency ?? null,
+                thumbnail: item.thumbnail ?? null,
+                notes: item.notes ?? null,
+                accessibility: item.accessibility ?? [],
+              })),
+            },
+          },
+        });
+      }
+
+      for (const [idx, item] of aiResponse.checklist.entries()) {
+        await tx.checklistItem.create({
+          data: {
+            tripId,
+            text: item.text,
+            category: item.category,
+            sortOrder: idx,
+          },
+        });
+      }
+
+      for (const [idx, note] of aiResponse.transportNotes.entries()) {
+        await tx.transportNote.create({
+          data: {
+            tripId,
+            icon: note.icon,
+            title: note.title,
+            detail: note.detail,
+            sortOrder: idx,
+          },
+        });
+      }
+    });
+
+    return { daysGenerated: aiResponse.days.length, tokensUsed: aiResponse.tokensUsed };
+  },
+
   // List documents attached to a trip
   async listTripDocuments(tripId: string, userId: string) {
     await requireMember(tripId, userId);

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import "dotenv-safe/config.js";
+import { config as dotenvConfig } from "dotenv";
+dotenvConfig({ override: true });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),

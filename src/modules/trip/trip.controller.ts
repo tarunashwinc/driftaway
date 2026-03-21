@@ -182,15 +182,14 @@ export const tripController = {
       throw new ValidationError(parsed.error.errors.map((e) => e.message).join(", "));
     }
 
-    // Verify membership before queuing
-    await tripService.getItinerary(request.params.id, user.userId);
-
-    // AI module is built separately — stub response for now
-    // getAIProvider is imported lazily to avoid circular deps when AI module is ready:
-    // const { getAIProvider } = await import("../ai/ai.provider.js");
+    const result = await tripService.generateAIPlan(
+      request.params.id,
+      user.userId,
+      parsed.data.provider,
+    );
     reply.send({
       success: true,
-      data: { message: "AI plan generation queued", status: "pending" },
+      data: { message: "AI plan generated", ...result },
     });
   },
 
