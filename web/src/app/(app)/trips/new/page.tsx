@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState } from "react";
-import { ArrowLeft, MapPin, CalendarDays, Wallet, Sparkles, Plane } from "lucide-react";
+import { ArrowLeft, MapPin, CalendarDays, Wallet, Plane } from "lucide-react";
 import Link from "next/link";
 import { Input } from "../../../../components/ui/input";
 import { api } from "../../../../lib/api";
@@ -18,7 +18,7 @@ const schema = z
     endDate: z.string().min(1, "End date is required"),
     currency: z.string().length(3, "Select a currency"),
     budgetTotal: z.number().positive("Budget must be positive").optional(),
-    aiProvider: z.enum(["claude", "openai", "gemini"]),
+    aiProvider: z.enum(["claude", "openai", "gemini"]).default("openai"),
   })
   .refine((d) => !d.endDate || !d.startDate || d.endDate >= d.startDate, {
     message: "End date must be after start date",
@@ -36,32 +36,6 @@ const CURRENCIES = [
   "INR", "USD", "EUR", "GBP", "JPY", "SGD", "AED", "THB", "AUD", "CAD",
 ];
 
-const AI_OPTIONS = [
-  {
-    value: "openai" as const,
-    label: "GPT-4o",
-    sublabel: "OpenAI",
-    desc: "Best for creative, detailed itinerary ideas",
-    emoji: "✨",
-    accentColor: "#06D6A0",
-  },
-  {
-    value: "claude" as const,
-    label: "Claude",
-    sublabel: "Anthropic",
-    desc: "Great for thoughtful, in-depth planning",
-    emoji: "🤖",
-    accentColor: "#FF6B35",
-  },
-  {
-    value: "gemini" as const,
-    label: "Gemini",
-    sublabel: "Google",
-    desc: "Fast and concise trip plans",
-    emoji: "⚡",
-    accentColor: "#6C63FF",
-  },
-];
 
 export default function NewTripPage() {
   const router = useRouter();
@@ -70,7 +44,6 @@ export default function NewTripPage() {
   const {
     register,
     handleSubmit,
-    watch,
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
@@ -80,8 +53,6 @@ export default function NewTripPage() {
       aiProvider: "openai",
     },
   });
-
-  const selectedProvider = watch("aiProvider");
 
   async function onSubmit(data: FormData) {
     setError(null);
@@ -291,123 +262,8 @@ export default function NewTripPage() {
           </div>
         </div>
 
-        {/* Section: AI Provider */}
-        <div
-          className="bg-white rounded-2xl border border-black/5 shadow-[0_2px_16px_rgba(0,0,0,0.08)] overflow-hidden"
-        >
-          <div
-            className="flex items-center gap-2.5 px-4 pt-4 pb-3 border-b border-black/5"
-          >
-            <div
-              className="w-7 h-7 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: "rgba(255,107,53,0.12)" }}
-            >
-              <Sparkles size={14} style={{ color: "#FF6B35" }} />
-            </div>
-            <div>
-              <span
-                className="text-xs font-semibold uppercase tracking-wider"
-                style={{ color: "#9CA3AF", fontFamily: "Space Grotesk, sans-serif" }}
-              >
-                AI Planner
-              </span>
-              <p
-                className="text-[11px] mt-0.5"
-                style={{ color: "#9CA3AF", fontFamily: "Space Grotesk, sans-serif" }}
-              >
-                Choose the AI model to generate your itinerary
-              </p>
-            </div>
-          </div>
-
-          <div className="px-4 pb-4 pt-3 flex flex-col gap-2.5">
-            {AI_OPTIONS.map((opt) => {
-              const isSelected = selectedProvider === opt.value;
-              return (
-                <label
-                  key={opt.value}
-                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border cursor-pointer transition-all active:scale-[0.98]"
-                  style={{
-                    borderColor: isSelected ? "#FF6B35" : "rgba(0,0,0,0.08)",
-                    backgroundColor: isSelected
-                      ? "rgba(255,107,53,0.05)"
-                      : "white",
-                    boxShadow: isSelected
-                      ? "0 0 0 1.5px #FF6B35, 0 2px_8px rgba(255,107,53,0.12)"
-                      : "none",
-                    WebkitTapHighlightColor: "transparent",
-                  }}
-                >
-                  {/* Hidden radio */}
-                  <input
-                    type="radio"
-                    value={opt.value}
-                    {...register("aiProvider")}
-                    className="sr-only"
-                  />
-
-                  {/* Emoji icon badge */}
-                  <div
-                    className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0"
-                    style={{
-                      backgroundColor: isSelected
-                        ? `${opt.accentColor}18`
-                        : "rgba(0,0,0,0.04)",
-                    }}
-                  >
-                    {opt.emoji}
-                  </div>
-
-                  {/* Label */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-1.5">
-                      <p
-                        className="font-semibold text-sm leading-none"
-                        style={{
-                          fontFamily: "Outfit, sans-serif",
-                          color: "#1A1A2E",
-                        }}
-                      >
-                        {opt.label}
-                      </p>
-                      <p
-                        className="text-[11px]"
-                        style={{
-                          color: "#9CA3AF",
-                          fontFamily: "Space Grotesk, sans-serif",
-                        }}
-                      >
-                        {opt.sublabel}
-                      </p>
-                    </div>
-                    <p
-                      className="text-xs mt-0.5 leading-snug"
-                      style={{
-                        color: "#9CA3AF",
-                        fontFamily: "Space Grotesk, sans-serif",
-                      }}
-                    >
-                      {opt.desc}
-                    </p>
-                  </div>
-
-                  {/* Selected indicator dot */}
-                  <div
-                    className="w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-all"
-                    style={{
-                      borderColor: isSelected ? "#FF6B35" : "#D1D5DB",
-                      backgroundColor: isSelected ? "#FF6B35" : "transparent",
-                    }}
-                  >
-                    {isSelected && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                    )}
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        </div>
+        {/* aiProvider is fixed to openai — hidden input */}
+        <input type="hidden" {...register("aiProvider")} value="openai" />
 
         {/* Error message */}
         {error && (
