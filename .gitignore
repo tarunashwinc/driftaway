@@ -69,3 +69,5 @@ docker-compose.local.yml
 # ─── Private travel documents (sensitive — never commit) ─────────────────────
 private/
 Japan_Family_Trip_Docs/
+
+keys
