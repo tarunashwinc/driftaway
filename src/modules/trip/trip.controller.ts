@@ -1,7 +1,10 @@
+import fs from "fs";
+import path from "path";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import {
   UnauthorizedError,
   ValidationError,
+  NotFoundError,
 } from "../../middleware/error-handler.js";
 import {
   addBookingSchema,
@@ -360,5 +363,31 @@ export const tripController = {
     const user = getUser(request);
     const docs = await tripService.listTripDocuments(request.params.id, user.userId);
     reply.send({ success: true, data: docs });
+  },
+
+  async downloadDocument(
+    request: FastifyRequest<{ Params: TripParams & { docId: string } }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const user = getUser(request);
+    const docs = await tripService.listTripDocuments(request.params.id, user.userId);
+    const doc = docs.find((d) => d.id === request.params.docId);
+    if (!doc) throw new NotFoundError("Document");
+
+    const meta = doc.metadata as Record<string, unknown> | null;
+    const localPath = meta?.localPath as string | undefined;
+
+    if (localPath && fs.existsSync(localPath)) {
+      const filename = path.basename(localPath);
+      const buffer = fs.readFileSync(localPath);
+      reply
+        .header("Content-Type", doc.mimeType)
+        .header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(filename)}`)
+        .header("Cache-Control", "private, max-age=3600");
+      reply.send(buffer);
+      return;
+    }
+
+    throw new NotFoundError("Document file");
   },
 };

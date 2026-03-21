@@ -1,12 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Plus, Plane, Hotel, Train, Car, ExternalLink, ArrowRight, Download, FileText,
 } from "lucide-react";
 import Link from "next/link";
-import { api } from "../../lib/api";
+import { api, getAccessToken } from "../../lib/api";
 import { Spinner } from "../ui/spinner";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -79,33 +80,50 @@ function extractIATA(loc: string) {
 
 // ── Inline document attachment ────────────────────────────────────────────────
 
-function DocAttachment({ doc }: { doc: TripDocument }) {
-  const localPath = doc.metadata?.localPath as string | undefined;
+function DocAttachment({ doc, tripId }: { doc: TripDocument; tripId: string }) {
   const emoji = DOC_EMOJI[doc.type] ?? "📄";
+  const [loading, setLoading] = useState(false);
+
+  const handleOpen = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`/api/v1/trips/${tripId}/documents/${doc.id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("Failed to load document");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch {
+      // silently fail — file may not be on disk
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <button
-      onClick={() => localPath && window.open(`file://${localPath}`, "_blank")}
-      className="flex items-center gap-2.5 w-full mt-3 px-3 py-2.5 rounded-xl border border-dashed border-[#E5E7EB] bg-[#FAFAFA] hover:bg-[#F0EEE9] hover:border-[#FF6B35]/30 active:scale-[0.98] transition-all text-left group"
+      onClick={handleOpen}
+      disabled={loading}
+      className="flex items-center gap-2.5 w-full mt-3 px-3 py-2.5 rounded-xl border border-dashed border-[#E5E7EB] bg-[#FAFAFA] hover:bg-[#F0EEE9] hover:border-[#FF6B35]/30 active:scale-[0.98] transition-all text-left group disabled:opacity-60"
     >
       <div className="w-8 h-8 rounded-lg bg-white border border-black/8 flex items-center justify-center text-sm shrink-0 shadow-sm">
-        {emoji}
+        {loading ? <span className="animate-spin text-xs">⏳</span> : emoji}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-semibold text-[#1A1A2E] truncate leading-tight">
-          {doc.name}
-        </p>
+        <p className="text-[11px] font-semibold text-[#1A1A2E] truncate leading-tight">{doc.name}</p>
         <p className="text-[10px] text-[#9CA3AF] mt-0.5">{formatSize(doc.sizeBytes)}</p>
       </div>
       <div className="shrink-0 flex items-center gap-1 text-[10px] font-semibold text-[#FF6B35] opacity-0 group-hover:opacity-100 transition-opacity">
-        {localPath ? (
-          <>
-            <Download size={12} strokeWidth={2.5} />
-            <span>Open</span>
-          </>
-        ) : (
-          <FileText size={12} strokeWidth={2} className="text-[#9CA3AF]" />
-        )}
+        <Download size={12} strokeWidth={2.5} />
+        <span>{loading ? "Loading…" : "Open"}</span>
       </div>
     </button>
   );
@@ -113,7 +131,7 @@ function DocAttachment({ doc }: { doc: TripDocument }) {
 
 // ── Flight card ───────────────────────────────────────────────────────────────
 
-function FlightCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
+function FlightCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tripId: string }) {
   const s = getStatusStyle(b.status);
 
   return (
@@ -192,7 +210,7 @@ function FlightCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
       {/* Inline documents */}
       {docs.length > 0 && (
         <div className="px-4 pb-4">
-          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} />)}
+          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} tripId={tripId} />)}
         </div>
       )}
     </div>
@@ -201,7 +219,7 @@ function FlightCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
 
 // ── Hotel card ────────────────────────────────────────────────────────────────
 
-function HotelCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
+function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tripId: string }) {
   const s = getStatusStyle(b.status);
   const inclusions = b.details?.inclusions as string[] | undefined;
   const roomType   = b.details?.roomType   as string | undefined;
@@ -258,7 +276,7 @@ function HotelCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
           {notes && <p className="text-[10px] text-amber-500 mt-1.5 font-medium">⚠️ {notes}</p>}
 
           {/* Inline documents */}
-          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} />)}
+          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} tripId={tripId} />)}
         </div>
       </div>
     </div>
@@ -267,7 +285,7 @@ function HotelCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
 
 // ── Generic card ──────────────────────────────────────────────────────────────
 
-function GenericCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
+function GenericCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tripId: string }) {
   const s = getStatusStyle(b.status);
   const iconMap: Record<string, ReactNode> = {
     train: <Train size={18} className="text-blue-500" strokeWidth={1.8} />,
@@ -297,17 +315,17 @@ function GenericCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
               <span className="text-sm font-bold text-[#1A1A2E] shrink-0">{formatCurrency(b.cost, b.currency)}</span>
             )}
           </div>
-          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} />)}
+          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} tripId={tripId} />)}
         </div>
       </div>
     </div>
   );
 }
 
-function BookingCard({ b, docs }: { b: Booking; docs: TripDocument[] }) {
-  if (b.type === "flight") return <FlightCard b={b} docs={docs} />;
-  if (b.type === "hotel")  return <HotelCard  b={b} docs={docs} />;
-  return <GenericCard b={b} docs={docs} />;
+function BookingCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tripId: string }) {
+  if (b.type === "flight") return <FlightCard b={b} docs={docs} tripId={tripId} />;
+  if (b.type === "hotel")  return <HotelCard  b={b} docs={docs} tripId={tripId} />;
+  return <GenericCard b={b} docs={docs} tripId={tripId} />;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -374,7 +392,7 @@ export function BookingsTab({ tripId }: { tripId: string }) {
             </span>
           </div>
           {section.items.map((b) => (
-            <BookingCard key={b.id} b={b} docs={getDocsForBooking(b)} />
+            <BookingCard key={b.id} b={b} docs={getDocsForBooking(b)} tripId={tripId} />
           ))}
         </div>
       ))}

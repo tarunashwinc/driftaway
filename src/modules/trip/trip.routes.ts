@@ -36,4 +36,5 @@ export async function tripRoutes(app: FastifyInstance): Promise<void> {
   app.post("/:id/whatsapp/sync", tripController.whatsappSync);
 
   app.get("/:id/documents", tripController.listDocuments);
+  app.get("/:id/documents/:docId/download", tripController.downloadDocument);
 }
