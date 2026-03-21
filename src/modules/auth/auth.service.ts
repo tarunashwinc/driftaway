@@ -47,7 +47,7 @@ export const authService = {
     phone: string,
     captchaToken?: string,
   ): Promise<{ message: string; devOtp?: string }> {
-    const isDev = env.NODE_ENV === "development";
+    const isDev = env.NODE_ENV === "development" || env.DEV_OTP_BYPASS;
 
     // Verify hCaptcha in production when token is provided
     if (!isDev && captchaToken) {
@@ -90,7 +90,7 @@ export const authService = {
   },
 
   async verifyOtp(phone: string, code: string): Promise<AuthResult> {
-    const isDev = env.NODE_ENV === "development";
+    const isDev = env.NODE_ENV === "development" || env.DEV_OTP_BYPASS;
 
     // Dev shortcut: last 6 digits of phone always works in development
     const devFixedOtp = phone.replace(/\D/g, "").slice(-6);
