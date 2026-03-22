@@ -1,14 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#FF8C42"/>
-      <stop offset="100%" style="stop-color:#E8521A"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#FF9A5C"/>
+      <stop offset="100%" stop-color="#E8521A"/>
     </linearGradient>
   </defs>
   <!-- Rounded square background -->
-  <rect width="180" height="180" rx="38" fill="url(#bg)"/>
-  <!-- Paper plane icon centered -->
-  <g transform="translate(36, 36) scale(3.375)">
-    <path d="M32 2L2 14l11 5 14-11-10 12 5 11z" fill="white" opacity="0.95"/>
-  </g>
+  <rect width="180" height="180" rx="40" fill="url(#bg)"/>
+  <!-- Paper plane body (scaled 5.625× from 32px version) -->
+  <path d="M34 93 L146 39 L107 141 Z" fill="white"/>
+  <!-- Wing fold shadow -->
+  <path d="M34 93 L73 110 L107 141 Z" fill="rgba(0,0,0,0.13)"/>
+  <!-- Fold crease line -->
+  <line x1="34" y1="93" x2="73" y2="110" stroke="rgba(255,255,255,0.35)" stroke-width="3.4"/>
 </svg>

@@ -18,10 +18,6 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "DriftAway — plan less. live more.",
   description: "AI-powered collaborative travel planner",
-  icons: {
-    icon: "/icon.svg",
-    apple: "/apple-icon.svg",
-  },
 };
 
 export const viewport: Viewport = {

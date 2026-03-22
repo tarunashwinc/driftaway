@@ -5,12 +5,8 @@
       <stop offset="100%" stop-color="#E8521A"/>
     </linearGradient>
   </defs>
-  <!-- Rounded square background -->
   <rect width="32" height="32" rx="7" fill="url(#bg)"/>
-  <!-- Paper plane body -->
   <path d="M6 16.5 L26 7 L19 25 Z" fill="white"/>
-  <!-- Wing fold (underside shadow) -->
   <path d="M6 16.5 L13 19.5 L19 25 Z" fill="rgba(0,0,0,0.13)"/>
-  <!-- Fold crease line -->
   <line x1="6" y1="16.5" x2="13" y2="19.5" stroke="rgba(255,255,255,0.35)" stroke-width="0.6"/>
 </svg>
