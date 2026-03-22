@@ -73,14 +73,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh flex flex-col bg-surface">
-      <main className={`flex-1 overflow-y-auto ${isSubFlow ? "" : "pb-24"}`}>
+      <main className={`flex-1 overflow-y-auto ${isSubFlow ? "" : "pb-28"}`}>
         {children}
       </main>
 
       {/* Bottom nav — hidden on sub-flow pages */}
       {!isSubFlow && (
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50">
-          <div className="mx-4 mb-4 bg-[#1A1A2E] rounded-3xl shadow-float flex items-center justify-around p-2">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 px-4 pb-[max(10px,env(safe-area-inset-bottom))]">
+          <div className="bg-[#1A1A2E] rounded-3xl shadow-float flex items-center justify-around p-2">
             {navItems.map((item) => {
               const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
               return (
