@@ -410,7 +410,7 @@ export const tripController = {
     const filename = path.basename(doc.name);
     const disposition = `inline; filename*=UTF-8''${encodeURIComponent(filename)}`;
 
-    // 1. S3-uploaded documents (new path)
+    // 1. S3-uploaded documents — try S3 first, fall through to local on failure
     if (doc.s3Key) {
       try {
         const s3Res = await s3.send(
@@ -428,11 +428,12 @@ export const tripController = {
         reply.send(buffer);
         return;
       } catch {
-        throw new NotFoundError("Document file");
+        // S3 fetch failed (e.g. seeded docs with a "local/" s3Key that don't
+        // exist in the bucket) — fall through to local-disk lookup below.
       }
     }
 
-    // 2. Legacy seeded docs stored on disk
+    // 2. Legacy / seeded docs stored on disk
     const meta = doc.metadata as Record<string, unknown> | null;
     const rawPath = meta?.localPath as string | undefined;
 

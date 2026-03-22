@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { Spinner } from "../ui/spinner";
-import { Plane, ArrowRight } from "lucide-react";
+import { Plane } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,7 @@ interface Booking {
   arrivalDate?: string | null;
   arrivalTime?: string | null;
   confirmationRef?: string | null;
+  details?: Record<string, unknown> | null;
 }
 
 interface BookingsResponse {
@@ -239,55 +240,149 @@ function ItemCard({ item, isLast }: { item: ItineraryItem; isLast: boolean }) {
   );
 }
 
-// ── Flight arrival/departure banner ───────────────────────────────────────────
+// ── Flight card helpers ────────────────────────────────────────────────────────
 
-function FlightBanner({ booking, role }: { booking: Booking; role: "arriving" | "departing" }) {
-  const iata = (loc: string | null | undefined) => loc?.match(/\(([A-Z]{3})\)/)?.[1] ?? loc?.slice(0, 3).toUpperCase() ?? "—";
-  const time = role === "arriving" ? booking.arrivalTime : booking.departureTime;
-  const from = iota(booking.fromLocation);
-  const to   = iata(booking.toLocation);
-  const flightName = booking.name ?? booking.carrier ?? "Flight";
-  const ref = booking.confirmationRef;
-
-  // Color: arrivals = teal/green accent, departures = orange accent
-  const bg   = role === "arriving"  ? "bg-[#06D6A0]/8 border-[#06D6A0]/25"  : "bg-[#FF6B35]/8 border-[#FF6B35]/25";
-  const icon = role === "arriving"  ? "text-[#06D6A0]"                        : "text-[#FF6B35]";
-  const pill = role === "arriving"  ? "bg-[#06D6A0]/15 text-[#06D6A0]"        : "bg-[#FF6B35]/15 text-[#FF6B35]";
-
-  return (
-    <div className={`mx-4 mt-3 mb-0 rounded-xl border px-3.5 py-2.5 flex items-center gap-2.5 ${bg}`}>
-      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${pill}`}>
-        <Plane size={13} className={icon} strokeWidth={2.5} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`text-[10px] font-bold uppercase tracking-widest ${icon}`}>
-            {role === "arriving" ? "✈ Arriving" : "✈ Departing"}
-          </span>
-          {time && (
-            <span className="text-xs font-black text-[#1A1A2E] tabular-nums">{time}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-          <span className="text-[11px] font-bold text-[#1A1A2E]">{from}</span>
-          <ArrowRight size={9} className="text-[#9CA3AF] shrink-0" />
-          <span className="text-[11px] font-bold text-[#1A1A2E]">{to}</span>
-          <span className="text-[11px] text-[#9CA3AF] truncate">· {flightName}{ref ? ` · ${ref}` : ""}</span>
-        </div>
-      </div>
-      {role === "arriving" && booking.arrivalTime && (
-        <div className="shrink-0 text-right">
-          <p className="text-[9px] text-[#9CA3AF] font-medium leading-none">local time</p>
-          <p className="text-[10px] text-[#9CA3AF] font-medium">at destination</p>
-        </div>
-      )}
-    </div>
-  );
+// Extract IATA code from "City Name (XYZ)" or first 3 uppercase chars
+function iota(loc: string | null | undefined): string {
+  return loc?.match(/\(([A-Z]{3})\)/)?.[1] ?? loc?.slice(0, 3).toUpperCase() ?? "—";
 }
 
-// helper (needed inside FlightBanner closure)
-function iota(loc: string | null | undefined) {
-  return loc?.match(/\(([A-Z]{3})\)/)?.[1] ?? loc?.slice(0, 3).toUpperCase() ?? "—";
+// Human-readable city name (strip parenthetical IATA code)
+function cityName(loc: string | null | undefined): string {
+  return loc?.replace(/\s*\([A-Z]{3}\)\s*$/, "").trim() ?? "";
+}
+
+// Calculate flight duration from departure + arrival datetimes
+function flightDuration(
+  depDate: string | null | undefined,
+  depTime: string | null | undefined,
+  arrDate: string | null | undefined,
+  arrTime: string | null | undefined,
+): string | null {
+  if (!depDate || !depTime || !arrDate || !arrTime) return null;
+  try {
+    const dep = new Date(`${depDate.split("T")[0]}T${depTime}:00`);
+    const arr = new Date(`${arrDate.split("T")[0]}T${arrTime}:00`);
+    const diffMs = arr.getTime() - dep.getTime();
+    if (diffMs <= 0) return null;
+    const totalMin = Math.round(diffMs / 60_000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  } catch {
+    return null;
+  }
+}
+
+// ── Flight boarding-pass card ──────────────────────────────────────────────────
+
+function FlightBanner({ booking, role }: { booking: Booking; role: "arriving" | "departing" }) {
+  const fromIATA = iota(booking.fromLocation);
+  const toIATA   = iota(booking.toLocation);
+  const fromCity = cityName(booking.fromLocation);
+  const toCity   = cityName(booking.toLocation);
+
+  const depTime = booking.departureTime;
+  const arrTime = booking.arrivalTime;
+  const duration = flightDuration(
+    booking.departureDate, depTime, booking.arrivalDate, arrTime,
+  );
+
+  const carrier    = booking.carrier ?? "";
+  const flightNum  = booking.name ?? "";
+  const ref        = booking.confirmationRef;
+  const cabinClass = booking.details?.class as string | undefined;
+
+  // Role colours
+  const isArriving = role === "arriving";
+  const accent    = isArriving ? "#06D6A0" : "#FF6B35";
+  const pillBg    = isArriving ? "bg-[#06D6A0]/12" : "bg-[#FF6B35]/12";
+  const pillText  = isArriving ? "text-[#059669]"  : "text-[#C2410C]";
+  const borderCol = isArriving ? "border-[#06D6A0]/30" : "border-[#FF6B35]/30";
+
+  return (
+    <div className={`mx-4 mt-3 rounded-2xl border bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden ${borderCol}`}>
+      {/* Top bar: role pill + carrier */}
+      <div className="flex items-center justify-between px-3.5 pt-3 pb-2 border-b border-black/5">
+        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${pillBg} ${pillText}`}>
+          <Plane size={10} strokeWidth={2.5} className={isArriving ? "rotate-[-35deg]" : "rotate-[35deg]"} />
+          {isArriving ? "Arriving" : "Departing"}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {carrier && (
+            <span className="text-[11px] font-semibold text-[#6B7280]">{carrier}</span>
+          )}
+          {flightNum && (
+            <span className="text-[11px] font-black text-[#1A1A2E]">{flightNum}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Route row */}
+      <div className="px-3.5 py-3.5">
+        <div className="flex items-center gap-0">
+          {/* Departure */}
+          <div className="flex-1 min-w-0">
+            <p className="text-2xl font-black text-[#1A1A2E] tabular-nums leading-none">{fromIATA}</p>
+            {depTime && (
+              <p className="text-base font-black tabular-nums mt-1" style={{ color: accent }}>
+                {depTime}
+              </p>
+            )}
+            {fromCity && (
+              <p className="text-[10px] text-[#9CA3AF] font-medium mt-0.5 leading-tight truncate max-w-[90px]">{fromCity}</p>
+            )}
+          </div>
+
+          {/* Centre: duration + line */}
+          <div className="flex flex-col items-center px-2 shrink-0">
+            {duration && (
+              <span className="text-[10px] font-bold text-[#9CA3AF] mb-1 tabular-nums">{duration}</span>
+            )}
+            <div className="flex items-center gap-0.5">
+              <div className="w-1.5 h-1.5 rounded-full border-2 border-[#D1D5DB]" />
+              <div className="w-12 h-px bg-[#D1D5DB]" />
+              <Plane size={12} className="text-[#9CA3AF]" strokeWidth={2} />
+              <div className="w-12 h-px bg-[#D1D5DB]" />
+              <div className="w-1.5 h-1.5 rounded-full border-2 border-[#D1D5DB]" />
+            </div>
+            <span className="text-[9px] text-[#C4C9D4] font-medium mt-1 uppercase tracking-wide">non-stop</span>
+          </div>
+
+          {/* Arrival */}
+          <div className="flex-1 min-w-0 text-right">
+            <p className="text-2xl font-black text-[#1A1A2E] tabular-nums leading-none">{toIATA}</p>
+            {arrTime && (
+              <p className="text-base font-black tabular-nums mt-1" style={{ color: accent }}>
+                {arrTime}
+              </p>
+            )}
+            {toCity && (
+              <p className="text-[10px] text-[#9CA3AF] font-medium mt-0.5 leading-tight truncate max-w-[90px] ml-auto">{toCity}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom details strip */}
+        {(ref ?? cabinClass) && (
+          <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-black/5 flex-wrap">
+            {ref && (
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold text-[#9CA3AF] uppercase tracking-widest">PNR</span>
+                <span className="text-[11px] font-black text-[#1A1A2E] font-mono tracking-wider">{ref}</span>
+              </div>
+            )}
+            {cabinClass && (
+              <>
+                <div className="w-px h-3 bg-[#E5E7EB]" />
+                <span className="text-[10px] font-semibold text-[#6B7280] capitalize">{cabinClass}</span>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Day card ──────────────────────────────────────────────────────────────────
