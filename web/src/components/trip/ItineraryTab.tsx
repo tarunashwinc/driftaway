@@ -73,6 +73,14 @@ function formatDayDate(dateStr: string): string {
   return d.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" });
 }
 
+// Split "Venue Name — description of experience" into two parts.
+// Falls back gracefully if no em-dash separator is present.
+function splitActivity(activity: string): { venue: string; description: string | null } {
+  const idx = activity.indexOf(" — ");
+  if (idx === -1) return { venue: activity, description: null };
+  return { venue: activity.slice(0, idx), description: activity.slice(idx + 3) };
+}
+
 function formatCost(cost: number, currency: string | null): string {
   if (cost === 0) return "Free";
   const symbol = currency === "JPY" ? "¥" : currency === "INR" ? "₹" : currency === "USD" ? "$" : (currency ?? "");
@@ -85,6 +93,7 @@ function ItemCard({ item, isLast }: { item: ItineraryItem; isLast: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = getTypeConfig(item.type);
   const hasExtra = !!(item.notes || item.tip || item.openingHours || item.closedOn.length);
+  const { venue, description } = splitActivity(item.activity);
 
   return (
     <div className="flex gap-3">
@@ -141,10 +150,15 @@ function ItemCard({ item, isLast }: { item: ItineraryItem; isLast: boolean }) {
                 )}
               </div>
 
-              {/* Activity name */}
+              {/* Activity name — venue bold, description softer below */}
               <p className="text-sm font-semibold text-[#1A1A2E] leading-snug">
-                {item.activity}
+                {venue}
               </p>
+              {description && (
+                <p className="text-xs text-[#6B7280] mt-0.5 leading-relaxed">
+                  {description}
+                </p>
+              )}
 
               {/* Opening hours */}
               {item.openingHours && (
