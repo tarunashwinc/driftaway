@@ -54,6 +54,8 @@ export interface AIGenerateRequest {
     confirmationRef?: string;
     date?: string;
     time?: string;
+    arrivalDate?: string;
+    arrivalTime?: string;
     location?: string;
     cost?: number;
   }>;

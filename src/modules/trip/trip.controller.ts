@@ -283,6 +283,38 @@ export const tripController = {
     reply.send({ success: true, data: booking });
   },
 
+  async deleteBooking(
+    request: FastifyRequest<{ Params: TripBookingParams }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const user = getUser(request);
+    await tripService.deleteBooking(
+      request.params.id,
+      request.params.bookingId,
+      user.userId,
+    );
+    reply.send({ success: true });
+  },
+
+  async uploadDocumentForBooking(
+    request: FastifyRequest<{ Params: TripParams }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const user = getUser(request);
+    const data = await request.file();
+    if (!data) throw new ValidationError("No file uploaded");
+
+    const buffer = await data.toBuffer();
+    const result = await tripService.createBookingFromDocument(
+      request.params.id,
+      user.userId,
+      buffer,
+      data.filename,
+      data.mimetype,
+    );
+    reply.status(201).send({ success: true, data: result });
+  },
+
   async getChecklist(
     request: FastifyRequest<{ Params: TripParams }>,
     reply: FastifyReply,

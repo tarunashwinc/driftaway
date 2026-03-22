@@ -35,9 +35,9 @@ export function buildTravelPrompt(req: AIGenerateRequest): string {
           const parts = [`[${b.type.toUpperCase()}]`];
           if (b.name) parts.push(b.name);
           if (b.confirmationRef) parts.push(`Ref: ${b.confirmationRef}`);
-          if (b.date) parts.push(`Date: ${b.date}`);
-          if (b.time) parts.push(`Time: ${b.time}`);
-          if (b.location) parts.push(`Location: ${b.location}`);
+          if (b.date) parts.push(`Departs: ${b.date}${b.time ? ` at ${b.time}` : ""}`);
+          if (b.arrivalDate) parts.push(`Arrives: ${b.arrivalDate}${b.arrivalTime ? ` at ${b.arrivalTime}` : ""}`);
+          if (b.location) parts.push(`Route: ${b.location}`);
           if (b.cost) parts.push(`Cost: ${b.cost} ${req.currency}`);
           return `  • ${parts.join(" | ")}`;
         })
@@ -122,6 +122,8 @@ CONFIRMED BOOKINGS (must be incorporated exactly)
 ${bookingLines.join("\n")}
 
 IMPORTANT: For confirmed flights/hotels, use the exact times, dates, and names provided. Build the itinerary around these fixed anchors.
+• ARRIVAL RULE: On any day the group arrives by air/train, the FIRST itinerary item must be the arrival itself (e.g. "Land at Tokyo Narita (NRT) → Customs, baggage, immigration"). For international flights, add 2–3 hrs after arrival time for immigration + baggage + transfer. The first free activity must NOT be scheduled before (arrival time + 3 hrs minimum). If the flight lands at 08:00, no activities before 11:00.
+• DEPARTURE RULE: On departure days, the last morning is for check-out and airport transfer. Don't schedule sightseeing after check-out if the flight is afternoon/evening.
 
 ════════════════════════════════════════════════════════════
 TRAVELER PREFERENCES & TRAVEL STYLE

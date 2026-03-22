@@ -24,7 +24,9 @@ export async function tripRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/:id/bookings", tripController.listBookings);
   app.post("/:id/bookings", tripController.addBooking);
+  app.post("/:id/bookings/from-document", tripController.uploadDocumentForBooking);
   app.put("/:id/bookings/:bookingId", tripController.updateBooking);
+  app.delete("/:id/bookings/:bookingId", tripController.deleteBooking);
 
   app.get("/:id/checklist", tripController.getChecklist);
   app.post("/:id/checklist", tripController.addChecklistItem);

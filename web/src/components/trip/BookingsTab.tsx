@@ -5,9 +5,8 @@ import type { ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Plane, Hotel, Train, Car, ExternalLink, ArrowRight,
-  Download, FileText, Trash2, Paperclip,
+  Download, FileText, Trash2, Paperclip, Upload, AlertTriangle, X,
 } from "lucide-react";
-import Link from "next/link";
 import { api, getAccessToken } from "../../lib/api";
 import { Spinner } from "../ui/spinner";
 
@@ -91,6 +90,55 @@ function extractIATA(loc: string) {
   return loc.match(/\(([A-Z]{3})\)/)?.[1] ?? loc.slice(0, 3).toUpperCase();
 }
 
+// ── Confirm delete modal ──────────────────────────────────────────────────────
+
+function ConfirmDeleteModal({
+  title,
+  message,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl p-5 max-w-[320px] w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+            <AlertTriangle size={18} className="text-red-500" />
+          </div>
+          <p className="text-sm font-bold text-[#1A1A2E]">{title}</p>
+        </div>
+        <p className="text-xs text-[#6B7280] mb-4 leading-relaxed">{message}</p>
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-[#E5E7EB] text-sm font-semibold text-[#6B7280] hover:bg-[#F9F9F9] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 py-2.5 rounded-xl bg-red-500 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60 transition-colors"
+          >
+            {loading ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Document attachment row (with delete) ────────────────────────────────────
 
 function DocAttachment({
@@ -149,7 +197,6 @@ function DocAttachment({
         </div>
       </button>
 
-      {/* Delete document button */}
       <button
         type="button"
         onClick={() => onDelete(doc.id)}
@@ -234,6 +281,56 @@ function UploadDocButton({
   );
 }
 
+// ── Booking card wrapper with delete ─────────────────────────────────────────
+
+function BookingCardShell({
+  children,
+  onDelete,
+}: {
+  children: ReactNode;
+  onDelete: () => void;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleConfirm = async () => {
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+      setConfirmOpen(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="relative group">
+        {children}
+        {/* Delete booking button — top right overlay */}
+        <button
+          type="button"
+          onClick={() => setConfirmOpen(true)}
+          className="absolute top-3 right-3 w-6 h-6 rounded-lg bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 active:scale-90 transition-all opacity-0 group-hover:opacity-100 z-10"
+          aria-label="Delete booking"
+        >
+          <X size={12} strokeWidth={2.5} />
+        </button>
+      </div>
+
+      {confirmOpen && (
+        <ConfirmDeleteModal
+          title="Delete booking?"
+          message="This will permanently delete the booking and all its attached documents. This cannot be undone."
+          onConfirm={() => void handleConfirm()}
+          onCancel={() => setConfirmOpen(false)}
+          loading={deleting}
+        />
+      )}
+    </>
+  );
+}
+
 // ── Flight card ───────────────────────────────────────────────────────────────
 
 function FlightCard({
@@ -265,6 +362,7 @@ function FlightCard({
                 {extractIATA(b.fromLocation ?? "")}
               </p>
               {b.departureTime && <p className="text-[10px] text-[#9CA3AF] mt-0.5">{b.departureTime}</p>}
+              {b.departureDate && <p className="text-[10px] text-[#9CA3AF]">{formatDate(b.departureDate)}</p>}
             </div>
             <div className="flex-1 flex flex-col items-center gap-0.5 px-2">
               <div className="flex items-center gap-1 w-full">
@@ -272,15 +370,13 @@ function FlightCard({
                 <Plane size={14} className="text-[#9CA3AF]" strokeWidth={1.5} />
                 <div className="flex-1 h-px bg-[#E5E7EB]" />
               </div>
-              {b.departureDate && (
-                <span className="text-[10px] text-[#9CA3AF]">{formatDate(b.departureDate)}</span>
-              )}
             </div>
             <div className="text-center min-w-[48px]">
               <p className="text-2xl font-black text-[#1A1A2E] leading-none tracking-tight">
                 {extractIATA(b.toLocation ?? "")}
               </p>
               {b.arrivalTime && <p className="text-[10px] text-[#9CA3AF] mt-0.5">{b.arrivalTime}</p>}
+              {b.arrivalDate && <p className="text-[10px] text-[#9CA3AF]">{formatDate(b.arrivalDate)}</p>}
             </div>
           </div>
           <div className="px-4 flex items-center gap-1 text-[10px] text-[#9CA3AF]">
@@ -436,11 +532,135 @@ function GenericCard({
 }
 
 function BookingCard({
-  b, docs, tripId, onDeleteDoc, onUploadDone,
-}: { b: Booking; docs: TripDocument[]; tripId: string; onDeleteDoc: (id: string) => void; onUploadDone: () => void }) {
-  if (b.type === "flight") return <FlightCard b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} />;
-  if (b.type === "hotel")  return <HotelCard  b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} />;
-  return <GenericCard b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} />;
+  b, docs, tripId, onDeleteDoc, onUploadDone, onDeleteBooking,
+}: {
+  b: Booking; docs: TripDocument[]; tripId: string;
+  onDeleteDoc: (id: string) => void; onUploadDone: () => void;
+  onDeleteBooking: () => void;
+}) {
+  const inner =
+    b.type === "flight" ? <FlightCard b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} /> :
+    b.type === "hotel"  ? <HotelCard  b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} /> :
+                          <GenericCard b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} />;
+
+  return <BookingCardShell onDelete={onDeleteBooking}>{inner}</BookingCardShell>;
+}
+
+// ── Upload from document button ───────────────────────────────────────────────
+
+function CreateFromDocumentButton({
+  tripId,
+  onCreated,
+}: {
+  tripId: string;
+  onCreated: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [parsed, setParsed] = useState<string | null>(null);
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    setParsed(null);
+    try {
+      const token = getAccessToken();
+      const form = new FormData();
+      form.append("file", file);
+
+      const res = await fetch(`/api/v1/trips/${tripId}/bookings/from-document`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      const j = await res.json() as {
+        success?: boolean;
+        data?: { booking?: { name?: string; type?: string }; documentId?: string };
+        error?: { message?: string };
+      };
+      if (!res.ok) throw new Error(j.error?.message ?? "Failed to create booking");
+      const name = j.data?.booking?.name ?? j.data?.booking?.type ?? "booking";
+      setParsed(`✅ Created "${name}" from document`);
+      onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create booking");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+      if (parsed) setTimeout(() => setParsed(null), 4000);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.08)] border border-dashed border-[#E5E7EB] p-4">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+        }}
+      />
+      <button
+        type="button"
+        disabled={uploading}
+        onClick={() => fileRef.current?.click()}
+        className="w-full flex flex-col items-center gap-2 py-3 disabled:opacity-60"
+      >
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${uploading ? "bg-[#FF6B35]/10" : "bg-[#1A1A2E]/5"}`}>
+          {uploading
+            ? <Spinner size={20} />
+            : <Upload size={18} className="text-[#1A1A2E]" strokeWidth={1.8} />}
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-bold text-[#1A1A2E]">
+            {uploading ? "Scanning document…" : "Upload to create booking"}
+          </p>
+          <p className="text-[11px] text-[#9CA3AF] mt-0.5">
+            {uploading
+              ? "AI is reading your document"
+              : "PDF or image — AI will extract all booking details"}
+          </p>
+        </div>
+      </button>
+      {parsed && <p className="text-[11px] text-[#06D6A0] font-semibold text-center mt-1">{parsed}</p>}
+      {error && <p className="text-[11px] text-red-500 text-center mt-1">{error}</p>}
+    </div>
+  );
+}
+
+// ── Trip documents section (docs with no booking) ─────────────────────────────
+
+function TripDocumentsSection({
+  docs,
+  tripId,
+  onDelete,
+}: {
+  docs: TripDocument[];
+  tripId: string;
+  onDelete: (docId: string) => void;
+}) {
+  if (docs.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 px-1">
+        <span className="text-base leading-none">📂</span>
+        <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-widest">Trip Documents</p>
+        <span className="ml-auto text-xs text-[#9CA3AF] bg-white border border-black/8 px-2 py-0.5 rounded-full font-semibold">
+          {docs.length}
+        </span>
+      </div>
+      <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.08)] border border-black/5 px-4 py-3">
+        <p className="text-[10px] text-[#9CA3AF] mb-1">General trip documents (not linked to a specific booking)</p>
+        {docs.map((doc) => (
+          <DocAttachment key={doc.id} doc={doc} tripId={tripId} onDelete={onDelete} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -466,21 +686,43 @@ export function BookingsTab({ tripId }: { tripId: string }) {
     },
   });
 
+  // Delete booking mutation
+  const { mutate: deleteBooking } = useMutation({
+    mutationFn: (bookingId: string) =>
+      api.delete<{ success: boolean }>(`/trips/${tripId}/bookings/${bookingId}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["trips", tripId, "bookings"] });
+      void queryClient.invalidateQueries({ queryKey: ["trips", tripId, "documents"] });
+    },
+  });
+
   const bookings = bData?.data ?? [];
   const allDocs  = dData?.data ?? [];
 
-  // Map documents by bookingId (stored in metadata)
+  // Separate docs by bookingId: linked to a booking vs. general trip docs
   const docsByBookingId = new Map<string, TripDocument[]>();
+  const unlinkedDocs: TripDocument[] = [];
+
+  const allBookingIds = new Set(bookings.map((b) => b.id));
+
   for (const doc of allDocs) {
     const bid = doc.metadata?.bookingId as string | undefined;
-    if (bid) {
+    if (bid && allBookingIds.has(bid)) {
       const existing = docsByBookingId.get(bid) ?? [];
       existing.push(doc);
       docsByBookingId.set(bid, existing);
+    } else {
+      // No bookingId or bookingId doesn't match any booking → show in general section
+      unlinkedDocs.push(doc);
     }
   }
 
   const getDocsForBooking = (b: Booking) => docsByBookingId.get(b.id) ?? [];
+
+  const refreshAll = () => {
+    void queryClient.invalidateQueries({ queryKey: ["trips", tripId, "bookings"] });
+    void queryClient.invalidateQueries({ queryKey: ["trips", tripId, "documents"] });
+  };
 
   const refreshDocs = () => {
     void queryClient.invalidateQueries({ queryKey: ["trips", tripId, "documents"] });
@@ -503,11 +745,14 @@ export function BookingsTab({ tripId }: { tripId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Create booking from document — prominent at top */}
+      <CreateFromDocumentButton tripId={tripId} onCreated={refreshAll} />
+
       {sections.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="text-5xl mb-4">🎫</div>
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <div className="text-4xl mb-3">🎫</div>
           <p className="text-[#1A1A2E] font-bold text-base mb-1">No bookings yet</p>
-          <p className="text-[#9CA3AF] text-sm max-w-[220px]">Add your flights, hotels, and trains to keep everything in one place</p>
+          <p className="text-[#9CA3AF] text-sm max-w-[220px]">Upload a flight ticket or hotel confirmation above — AI will extract all the details automatically</p>
         </div>
       )}
 
@@ -528,17 +773,25 @@ export function BookingsTab({ tripId }: { tripId: string }) {
               tripId={tripId}
               onDeleteDoc={deleteDoc}
               onUploadDone={refreshDocs}
+              onDeleteBooking={() => new Promise<void>((res) => deleteBooking(b.id, { onSettled: () => res() }))}
             />
           ))}
         </div>
       ))}
 
-      <Link href={`/trips/${tripId}/bookings/new`}>
-        <button type="button" className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-[#1A1A2E] text-white text-sm font-bold shadow-[0_4px_14px_rgba(26,26,46,0.25)] active:scale-[0.98] transition-transform">
-          <Plus size={16} />Add Booking
-        </button>
-      </Link>
+      {/* General trip documents (not linked to any booking) */}
+      <TripDocumentsSection docs={unlinkedDocs} tripId={tripId} onDelete={deleteDoc} />
 
+      {/* Manual add */}
+      <button
+        type="button"
+        onClick={() => { window.location.href = `/trips/${tripId}/bookings/new`; }}
+        className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-[#1A1A2E] text-white text-sm font-bold shadow-[0_4px_14px_rgba(26,26,46,0.25)] active:scale-[0.98] transition-transform"
+      >
+        <Plus size={16} />Add Booking Manually
+      </button>
+
+      {/* External links */}
       <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.08)] border border-black/5 p-4">
         <p className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-widest mb-3">Book externally</p>
         <div className="flex flex-col gap-0 divide-y divide-[#F3F4F6]">

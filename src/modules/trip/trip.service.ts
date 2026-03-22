@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { prisma } from "../../config/prisma.js";
 import { s3, S3_BUCKET } from "../../config/s3.js";
+import { env } from "../../config/env.js";
 import {
   ConflictError,
   ForbiddenError,
@@ -995,7 +996,12 @@ export const tripService = {
       confirmationRef: b.confirmationRef ?? undefined,
       date: b.departureDate?.toISOString().split("T")[0] ?? b.checkIn?.toISOString().split("T")[0],
       time: b.departureTime ?? undefined,
-      location: b.fromLocation ?? b.toLocation ?? b.name ?? undefined,
+      arrivalDate: b.arrivalDate?.toISOString().split("T")[0] ?? undefined,
+      arrivalTime: b.arrivalTime ?? undefined,
+      location:
+        b.fromLocation && b.toLocation
+          ? `${b.fromLocation} → ${b.toLocation}`
+          : (b.fromLocation ?? b.toLocation ?? b.name ?? undefined),
       cost: b.cost ? Number(b.cost) : undefined,
     }));
 
@@ -1095,6 +1101,203 @@ export const tripService = {
     });
 
     return { daysGenerated: aiResponse.days.length, tokensUsed: aiResponse.tokensUsed };
+  },
+
+  // Delete a booking and all its associated documents
+  async deleteBooking(tripId: string, bookingId: string, userId: string) {
+    await requireMember(tripId, userId);
+
+    const booking = await prisma.booking.findFirst({ where: { id: bookingId, tripId } });
+    if (!booking) throw new NotFoundError("Booking");
+
+    // Delete associated documents (those with this bookingId in metadata)
+    const allDocs = await prisma.document.findMany({ where: { tripId } });
+    const bookingDocs = allDocs.filter((d) => {
+      const meta = d.metadata as Record<string, unknown> | null;
+      return meta?.bookingId === bookingId;
+    });
+    for (const doc of bookingDocs) {
+      if (doc.s3Key) {
+        try {
+          await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: doc.s3Key }));
+        } catch {
+          // best-effort S3 delete
+        }
+      }
+      await prisma.document.delete({ where: { id: doc.id } });
+    }
+
+    await prisma.booking.delete({ where: { id: bookingId } });
+  },
+
+  // Parse a travel document with AI and create a booking from it
+  async createBookingFromDocument(
+    tripId: string,
+    userId: string,
+    buffer: Buffer,
+    fileName: string,
+    mimeType: string,
+  ): Promise<{ booking: BookingSummary; documentId: string }> {
+    await requireMember(tripId, userId);
+    await requireTrip(tripId);
+
+    const ALLOWED_MIME = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+    if (!ALLOWED_MIME.includes(mimeType)) {
+      throw new ValidationError("Only PDF, JPEG, PNG or WebP files are allowed");
+    }
+
+    // Upload document to S3 first
+    const ext = fileName.split(".").pop()?.toLowerCase() ?? "bin";
+    const docId = crypto.randomUUID();
+    const s3Key = `documents/${tripId}/${docId}.${ext}`;
+    await s3.send(
+      new PutObjectCommand({ Bucket: S3_BUCKET, Key: s3Key, Body: buffer, ContentType: mimeType }),
+    );
+
+    // Use Claude vision/document API to extract booking info
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+
+    const base64 = buffer.toString("base64");
+    const extractPrompt = `You are a travel booking document parser. Extract all booking details from this document and return ONLY a valid JSON object with these exact fields (use null for any missing values):
+{
+  "type": "flight" or "hotel" or "train" or "bus" or "activity" or "ferry",
+  "status": "confirmed" or "pending" or "cancelled",
+  "carrier": "airline name, hotel chain, or rail operator",
+  "name": "flight number (e.g. AI-302), hotel name, or activity name",
+  "fromLocation": "departure city and airport code, e.g. Mumbai (BOM)",
+  "toLocation": "arrival city and airport code, e.g. Tokyo Narita (NRT)",
+  "departureDate": "YYYY-MM-DD",
+  "departureTime": "HH:MM (24hr)",
+  "arrivalDate": "YYYY-MM-DD",
+  "arrivalTime": "HH:MM (24hr)",
+  "checkIn": "YYYY-MM-DD (hotels only)",
+  "checkOut": "YYYY-MM-DD (hotels only)",
+  "confirmationRef": "booking reference, PNR, or confirmation number",
+  "cost": 12345.00,
+  "currency": "3-letter ISO currency code, e.g. INR",
+  "docType": "ticket" or "hotel_confirmation" or "itinerary" or "other"
+}
+Return ONLY the JSON object. No explanation, no markdown.`;
+
+    const VALID_BOOKING_TYPES = new Set(["flight", "hotel", "train", "bus", "activity", "ferry"]);
+    const VALID_DOC_TYPES = new Set([
+      "ticket", "hotel_confirmation", "itinerary", "other", "passport", "visa", "insurance",
+    ]);
+
+    let extracted: Record<string, unknown> = {};
+    try {
+      // Build message content depending on MIME type
+      // For PDFs: use Claude native PDF support; for images: use vision
+      type ImageMime = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const messageContent: any[] =
+        mimeType === "application/pdf"
+          ? [
+              { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+              { type: "text", text: extractPrompt },
+            ]
+          : [
+              { type: "image", source: { type: "base64", media_type: mimeType as ImageMime, data: base64 } },
+              { type: "text", text: extractPrompt },
+            ];
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await (client.messages.create as (opts: any) => Promise<any>)({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        ...(mimeType === "application/pdf" ? { betas: ["pdfs-2024-09-25"] } : {}),
+        messages: [{ role: "user", content: messageContent }],
+      });
+
+      const text: string =
+        Array.isArray(response.content) &&
+        (response.content as Array<{ type: string; text: string }>)[0]?.type === "text"
+          ? (response.content as Array<{ type: string; text: string }>)[0]!.text
+          : "{}";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch?.[0]) {
+        extracted = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      }
+    } catch (err) {
+      // If AI fails, create a minimal booking — doc is already in S3
+      console.error("[createBookingFromDocument] AI parsing failed:", err);
+    }
+
+    const bookingType = (
+      VALID_BOOKING_TYPES.has(extracted.type as string) ? extracted.type : "flight"
+    ) as import("@prisma/client").BookingType;
+
+    const safeDocType = (
+      VALID_DOC_TYPES.has(extracted.docType as string) ? extracted.docType : "ticket"
+    ) as import("@prisma/client").DocumentType;
+
+    // Create the booking from extracted data
+    const booking = await prisma.booking.create({
+      data: {
+        tripId,
+        type: bookingType,
+        status: (["confirmed", "pending", "cancelled"].includes(extracted.status as string)
+          ? extracted.status
+          : "pending") as import("@prisma/client").BookingStatus,
+        carrier: (extracted.carrier as string | null) ?? null,
+        name: (extracted.name as string | null) ?? fileName,
+        fromLocation: (extracted.fromLocation as string | null) ?? null,
+        toLocation: (extracted.toLocation as string | null) ?? null,
+        departureDate: extracted.departureDate ? new Date(extracted.departureDate as string) : null,
+        departureTime: (extracted.departureTime as string | null) ?? null,
+        arrivalDate: extracted.arrivalDate ? new Date(extracted.arrivalDate as string) : null,
+        arrivalTime: (extracted.arrivalTime as string | null) ?? null,
+        checkIn: extracted.checkIn ? new Date(extracted.checkIn as string) : null,
+        checkOut: extracted.checkOut ? new Date(extracted.checkOut as string) : null,
+        confirmationRef: (extracted.confirmationRef as string | null) ?? null,
+        cost: typeof extracted.cost === "number" ? extracted.cost : null,
+        currency: (extracted.currency as string | null) ?? null,
+        travelers: [],
+        details: undefined,
+      },
+    });
+
+    // Create document record linked to the new booking
+    const doc = await prisma.document.create({
+      data: {
+        userId,
+        tripId,
+        type: safeDocType,
+        name: fileName,
+        s3Key,
+        mimeType,
+        sizeBytes: buffer.length,
+        metadata: { bookingId: booking.id } as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      documentId: doc.id,
+      booking: {
+        id: booking.id,
+        tripId: booking.tripId,
+        type: booking.type,
+        status: booking.status,
+        carrier: booking.carrier,
+        name: booking.name,
+        fromLocation: booking.fromLocation,
+        toLocation: booking.toLocation,
+        departureDate: booking.departureDate,
+        departureTime: booking.departureTime,
+        arrivalDate: booking.arrivalDate,
+        arrivalTime: booking.arrivalTime,
+        checkIn: booking.checkIn,
+        checkOut: booking.checkOut,
+        confirmationRef: booking.confirmationRef,
+        cost: toNumber(booking.cost),
+        currency: booking.currency,
+        travelers: booking.travelers,
+        details: null,
+        createdAt: booking.createdAt,
+        updatedAt: booking.updatedAt,
+      },
+    };
   },
 
   // List documents attached to a trip
