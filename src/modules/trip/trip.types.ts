@@ -156,6 +156,7 @@ export interface TripSummary {
   status: TripStatus;
   bannerConfig: TripBannerConfig | null;
   memberCount: number;
+  minorCount: number;
   members: TripSummaryMember[];
   myRole: TripRole;
   createdAt: Date;
@@ -176,6 +177,8 @@ export interface TripDetail {
   budgetSpent: number;
   aiProvider: AIProvider;
   status: TripStatus;
+  memberCount: number;
+  minorCount: number;
   preferences: TripPreferences | null;
   bannerConfig: TripBannerConfig | null;
   whatsappGroupId: string | null;

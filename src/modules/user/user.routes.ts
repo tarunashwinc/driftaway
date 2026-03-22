@@ -7,6 +7,7 @@ export async function userRoutes(app: FastifyInstance) {
 
   app.get("/me", userController.getProfile);
   app.put("/me", userController.updateProfile);
+  app.post("/me/avatar", userController.uploadAvatar);
   app.get("/me/family", userController.getFamilyGroup);
   app.get("/me/minors", userController.listMinors);
   app.post("/me/minors", userController.createMinor);

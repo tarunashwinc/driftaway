@@ -47,8 +47,11 @@ interface TripDetail {
     placesToVisit?: string[];
     pace?: string;
     focusAreas?: string[];
+    notes?: string;
   } | null;
   members: TripMember[];
+  memberCount?: number;
+  minorCount?: number;
   budgetTotal?: number | null;
 }
 
@@ -284,7 +287,8 @@ export default function TripDetailPage() {
             <div className="flex items-center gap-2 text-sm text-[#6B7280]">
               <Users size={13} className="text-[#FF6B35] shrink-0" />
               <span>
-                {trip.members.length} traveler{trip.members.length !== 1 ? "s" : ""}
+                {trip.members.length} adult{trip.members.length !== 1 ? "s" : ""}
+                {(trip.minorCount ?? 0) > 0 && ` · ${trip.minorCount} kid${trip.minorCount !== 1 ? "s" : ""}`}
               </span>
               <MemberAvatars members={trip.members} />
             </div>
@@ -355,6 +359,7 @@ export default function TripDetailPage() {
               tripId={tripId}
               wishlist={trip.preferences?.wishlist ?? []}
               placesToVisit={trip.preferences?.placesToVisit ?? []}
+              notes={trip.preferences?.notes}
             />
           )}
           {activeTab === "people"    && <TravelersTab  tripId={tripId} />}

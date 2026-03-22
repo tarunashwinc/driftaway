@@ -99,7 +99,7 @@ export const tripService = {
         include: {
           trip: {
             include: {
-              _count: { select: { members: true } },
+              _count: { select: { members: true, tripMinors: true } },
               members: {
                 take: 5,
                 include: {
@@ -129,6 +129,7 @@ export const tripService = {
       status: m.trip.status,
       bannerConfig: (m.trip.bannerConfig as Record<string, unknown> | null) ?? null,
       memberCount: m.trip._count.members,
+      minorCount: m.trip._count.tripMinors,
       members: m.trip.members.map((tm) => ({
         id: tm.id,
         userId: tm.userId,
@@ -178,6 +179,7 @@ export const tripService = {
     const trip = await prisma.trip.findFirst({
       where: { id: tripId, deletedAt: null },
       include: {
+        _count: { select: { tripMinors: true } },
         members: {
           include: {
             user: {
@@ -306,6 +308,8 @@ export const tripService = {
       budgetSpent: toNumberOrZero(trip.budgetSpent),
       aiProvider: trip.aiProvider,
       status: trip.status,
+      memberCount: trip.members.length,
+      minorCount: trip._count.tripMinors,
       preferences: (trip.preferences as Record<string, unknown> | null) ?? null,
       bannerConfig: (trip.bannerConfig as Record<string, unknown> | null) ?? null,
       whatsappGroupId: trip.whatsappGroupId,
@@ -1011,6 +1015,7 @@ export const tripService = {
       },
       wishlist: (tripPrefs.wishlist as string[] | undefined) ?? [],
       placesToVisit: (tripPrefs.placesToVisit as string[] | undefined) ?? [],
+      notes: (tripPrefs.notes as string | undefined) ?? undefined,
       existingBookings,
       budget: trip.budgetTotal ? Number(trip.budgetTotal) : undefined,
     });

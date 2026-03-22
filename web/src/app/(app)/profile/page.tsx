@@ -237,6 +237,12 @@ export default function ProfilePage() {
   const [minorDob, setMinorDob] = useState("");
   const [minorNeeds, setMinorNeeds] = useState("");
   const [minorRelationship, setMinorRelationship] = useState("Child");
+  // Edit dependent state
+  const [editingMinorId, setEditingMinorId] = useState<string | null>(null);
+  const [editMinorName, setEditMinorName] = useState("");
+  const [editMinorDob, setEditMinorDob] = useState("");
+  const [editMinorNeeds, setEditMinorNeeds] = useState("");
+  const [editMinorRelationship, setEditMinorRelationship] = useState("Child");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [minors, setMinors] = useState<Minor[]>([]);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -298,6 +304,38 @@ export default function ProfilePage() {
       api.delete<{ success: boolean }>(`/users/me/minors/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["minors"] }),
   });
+
+  const { mutate: updateMinor, isPending: isUpdatingMinor } = useMutation({
+    mutationFn: ({ id, name, dateOfBirth, specialNeeds }: { id: string; name: string; dateOfBirth: string; specialNeeds?: string }) =>
+      api.put<{ success: boolean }>(`/users/me/minors/${id}`, { name, dateOfBirth, specialNeeds }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["minors"] });
+      setEditingMinorId(null);
+    },
+  });
+
+  function startEditMinor(minor: Minor) {
+    const { relationship, needs } = parseMinorRelationship(minor.specialNeeds);
+    setEditingMinorId(minor.id);
+    setEditMinorName(minor.name);
+    setEditMinorDob(minor.dateOfBirth.slice(0, 10));
+    setEditMinorRelationship(relationship || "Child");
+    setEditMinorNeeds(needs || "");
+  }
+
+  function cancelEditMinor() {
+    setEditingMinorId(null);
+  }
+
+  function submitEditMinor() {
+    if (!editingMinorId || !editMinorName.trim() || !editMinorDob) return;
+    updateMinor({
+      id: editingMinorId,
+      name: editMinorName.trim(),
+      dateOfBirth: editMinorDob,
+      specialNeeds: encodeMinorSpecialNeeds(editMinorRelationship, editMinorNeeds) || undefined,
+    });
+  }
 
   // ── Avatar upload ─────────────────────────────────────────────────────────
 
@@ -837,44 +875,103 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-2 mb-3">
             {minors.map((minor) => {
               const { relationship, needs } = parseMinorRelationship(minor.specialNeeds);
+              const isEditing = editingMinorId === minor.id;
               return (
-                <div
-                  key={minor.id}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F7F5] border border-black/5"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#06D6A0] to-[#05B88B] flex items-center justify-center text-white text-sm font-bold shrink-0">
-                    {minor.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-[#1A1A2E] truncate">
-                        {minor.name}
-                      </p>
-                      {relationship && (
-                        <span className="px-2 py-0.5 rounded-full bg-[#06D6A0]/15 text-[#05B88B] text-xs font-semibold">
-                          {relationship}
-                        </span>
-                      )}
+                <div key={minor.id} className="rounded-xl bg-[#F8F7F5] border border-black/5 overflow-hidden">
+                  {/* View row */}
+                  {!isEditing && (
+                    <div className="flex items-center gap-3 p-3">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#06D6A0] to-[#05B88B] flex items-center justify-center text-white text-sm font-bold shrink-0">
+                        {minor.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-[#1A1A2E] truncate">{minor.name}</p>
+                          {relationship && (
+                            <span className="px-2 py-0.5 rounded-full bg-[#06D6A0]/15 text-[#05B88B] text-xs font-semibold">{relationship}</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#9CA3AF]">
+                          {getAge(minor.dateOfBirth)} yrs · Born{" "}
+                          {new Date(minor.dateOfBirth).toLocaleDateString("en", { month: "short", year: "numeric" })}
+                        </p>
+                        {needs && <p className="text-xs text-[#9CA3AF] truncate">{needs}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => startEditMinor(minor)}
+                        className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-400 hover:bg-blue-100 active:scale-90 transition-all shrink-0"
+                        aria-label={`Edit ${minor.name}`}
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteMinor(minor.id)}
+                        className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 active:scale-90 transition-all shrink-0"
+                        aria-label={`Remove ${minor.name}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
-                    <p className="text-xs text-[#9CA3AF]">
-                      {getAge(minor.dateOfBirth)} yrs · Born{" "}
-                      {new Date(minor.dateOfBirth).toLocaleDateString("en", {
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </p>
-                    {needs && (
-                      <p className="text-xs text-[#9CA3AF] truncate">{needs}</p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => deleteMinor(minor.id)}
-                    className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 active:scale-90 transition-all shrink-0"
-                    aria-label={`Remove ${minor.name}`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  )}
+
+                  {/* Inline edit form */}
+                  {isEditing && (
+                    <div className="p-3 flex flex-col gap-2.5">
+                      <p className="text-xs font-semibold text-[#FF6B35] uppercase tracking-wide">Edit Dependent</p>
+
+                      <select
+                        value={editMinorRelationship}
+                        onChange={(e) => setEditMinorRelationship(e.target.value)}
+                        className="px-3 py-2.5 rounded-xl border border-black/8 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B35]/25 focus:border-[#FF6B35]"
+                      >
+                        {RELATIONSHIP_OPTIONS.map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+
+                      <input
+                        value={editMinorName}
+                        onChange={(e) => setEditMinorName(e.target.value)}
+                        placeholder="Full name"
+                        className="px-3 py-2.5 rounded-xl border border-black/8 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B35]/25 focus:border-[#FF6B35]"
+                      />
+
+                      <input
+                        type="date"
+                        value={editMinorDob}
+                        onChange={(e) => setEditMinorDob(e.target.value)}
+                        className="px-3 py-2.5 rounded-xl border border-black/8 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B35]/25 focus:border-[#FF6B35]"
+                      />
+
+                      <input
+                        value={editMinorNeeds}
+                        onChange={(e) => setEditMinorNeeds(e.target.value)}
+                        placeholder="Special needs (optional)"
+                        className="px-3 py-2.5 rounded-xl border border-black/8 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6B35]/25 focus:border-[#FF6B35]"
+                      />
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={submitEditMinor}
+                          disabled={!editMinorName.trim() || !editMinorDob || isUpdatingMinor}
+                          className="flex-1 py-2.5 rounded-xl bg-[#FF6B35] text-white text-sm font-semibold disabled:opacity-50 active:scale-95 flex items-center justify-center gap-1.5"
+                        >
+                          {isUpdatingMinor ? <Spinner className="w-4 h-4 text-white" size={16} /> : <Check size={14} />}
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditMinor}
+                          className="flex-1 py-2.5 rounded-xl bg-gray-100 text-[#6B7280] text-sm font-semibold active:scale-95"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

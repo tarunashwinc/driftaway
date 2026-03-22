@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
+import multipart from "@fastify/multipart";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
@@ -32,6 +33,10 @@ await app.register(cookie);
 await app.register(rateLimit, {
   max: 100,
   timeWindow: "1 minute",
+});
+
+await app.register(multipart, {
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 }, // 5 MB max
 });
 
 // ─── Error handler ───

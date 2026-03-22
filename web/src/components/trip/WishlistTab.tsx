@@ -9,6 +9,7 @@ interface WishlistTabProps {
   tripId: string;
   wishlist: string[];
   placesToVisit: string[];
+  notes?: string;
 }
 
 function TagInput({
@@ -82,17 +83,18 @@ function TagInput({
   );
 }
 
-export function WishlistTab({ tripId, wishlist, placesToVisit }: WishlistTabProps) {
+export function WishlistTab({ tripId, wishlist, placesToVisit, notes }: WishlistTabProps) {
   const queryClient = useQueryClient();
 
   const [localWishlist, setLocalWishlist] = useState<string[]>(wishlist);
   const [localPlaces, setLocalPlaces] = useState<string[]>(placesToVisit);
+  const [localNotes, setLocalNotes] = useState<string>(notes ?? "");
   const [saved, setSaved] = useState(false);
 
   const { mutate: save, isPending } = useMutation({
-    mutationFn: (prefs: { wishlist: string[]; placesToVisit: string[] }) =>
+    mutationFn: (prefs: { wishlist: string[]; placesToVisit: string[]; notes: string }) =>
       api.put(`/trips/${tripId}`, {
-        preferences: { wishlist: prefs.wishlist, placesToVisit: prefs.placesToVisit },
+        preferences: { wishlist: prefs.wishlist, placesToVisit: prefs.placesToVisit, notes: prefs.notes },
       }),
     onSuccess: () => {
       setSaved(true);
@@ -102,12 +104,13 @@ export function WishlistTab({ tripId, wishlist, placesToVisit }: WishlistTabProp
   });
 
   const handleSave = () => {
-    save({ wishlist: localWishlist, placesToVisit: localPlaces });
+    save({ wishlist: localWishlist, placesToVisit: localPlaces, notes: localNotes });
   };
 
   const dirty =
     JSON.stringify(localWishlist) !== JSON.stringify(wishlist) ||
-    JSON.stringify(localPlaces) !== JSON.stringify(placesToVisit);
+    JSON.stringify(localPlaces) !== JSON.stringify(placesToVisit) ||
+    localNotes !== (notes ?? "");
 
   return (
     <div className="flex flex-col gap-5">
@@ -203,6 +206,25 @@ export function WishlistTab({ tripId, wishlist, placesToVisit }: WishlistTabProp
             ))}
           </div>
         )}
+      </div>
+
+      {/* Additional Notes */}
+      <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.07)] border border-black/5 p-4">
+        <div className="flex items-center gap-2.5 mb-3">
+          <span className="text-xl">📝</span>
+          <div>
+            <h3 className="text-sm font-bold text-[#1A1A2E]">Additional Notes for AI</h3>
+            <p className="text-xs text-[#9CA3AF]">Anything else the AI should know — pace, special moments, concerns</p>
+          </div>
+        </div>
+        <textarea
+          value={localNotes}
+          onChange={(e) => setLocalNotes(e.target.value)}
+          placeholder={'e.g. "We have an elderly grandparent — avoid long walks. We want at least one surprise experience. The kids love Pokemon."'}
+          rows={4}
+          disabled={isPending}
+          className="w-full px-4 py-3 rounded-2xl bg-[#F0EEE9] border border-black/8 text-sm text-[#1A1A2E] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#FF6B35]/40 resize-none disabled:opacity-50"
+        />
       </div>
 
       {/* Save button */}

@@ -22,6 +22,7 @@ interface TripSummary {
   bannerConfig?: { emoji?: string; gradient?: string } | null;
   members: TripMember[];
   memberCount: number;
+  minorCount: number;
 }
 
 interface TripsResponse {
@@ -65,10 +66,11 @@ function getDays(start: string, end: string): number {
 
 const AVATAR_COLORS = ["#FF6B35", "#06D6A0", "#6C63FF", "#FF6584"];
 
-function MemberStack({ members }: { members?: TripMember[] }) {
+function MemberStack({ members, minorCount }: { members?: TripMember[]; minorCount?: number }) {
   const list = members ?? [];
   const shown = list.slice(0, 3);
   const extra = list.length - shown.length;
+  const kids = minorCount ?? 0;
   return (
     <div className="flex items-center">
       {shown.map((m, i) => (
@@ -92,7 +94,8 @@ function MemberStack({ members }: { members?: TripMember[] }) {
         </div>
       )}
       <span className="ml-2 text-xs text-[#9CA3AF] font-medium">
-        {list.length} traveler{list.length !== 1 ? "s" : ""}
+        {list.length} adult{list.length !== 1 ? "s" : ""}
+        {kids > 0 && ` · ${kids} kid${kids !== 1 ? "s" : ""}`}
       </span>
     </div>
   );
@@ -341,7 +344,7 @@ export default function TripsPage() {
                         </span>
                       </div>
 
-                      <MemberStack members={trip.members} />
+                      <MemberStack members={trip.members} minorCount={trip.minorCount} />
                     </div>
                   </div>
                 </Link>

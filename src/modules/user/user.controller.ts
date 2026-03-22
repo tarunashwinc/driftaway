@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { ValidationError, UnauthorizedError } from "../../middleware/error-handler.js";
 import {
   updateProfileSchema,
@@ -6,6 +7,8 @@ import {
   updateMinorSchema,
 } from "./user.schema.js";
 import { userService } from "./user.service.js";
+import { s3, S3_BUCKET } from "../../config/s3.js";
+import { env } from "../../config/env.js";
 
 export const userController = {
   async getProfile(request: FastifyRequest, reply: FastifyReply) {
@@ -88,5 +91,35 @@ export const userController = {
     if (!request.user) throw new UnauthorizedError();
     const result = await userService.getFamilyGroup(request.user.userId);
     return reply.send({ success: true, data: result });
+  },
+
+  async uploadAvatar(request: FastifyRequest, reply: FastifyReply) {
+    if (!request.user) throw new UnauthorizedError();
+
+    const data = await request.file();
+    if (!data) throw new ValidationError("No file uploaded");
+
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(data.mimetype)) {
+      throw new ValidationError("Only JPEG, PNG, WebP or GIF images are allowed");
+    }
+
+    const ext = data.mimetype.split("/")[1] ?? "jpg";
+    const key = `avatars/${request.user.userId}.${ext}`;
+    const buffer = await data.toBuffer();
+
+    await s3.send(new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: data.mimetype,
+      ACL: "public-read",
+    }));
+
+    // Build public URL
+    const avatarUrl = `${env.S3_ENDPOINT}/${S3_BUCKET}/${key}`;
+
+    const user = await userService.updateProfile(request.user.userId, { avatarUrl });
+    return reply.send({ success: true, data: { avatarUrl: user.avatarUrl } });
   },
 };

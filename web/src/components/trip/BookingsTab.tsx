@@ -60,8 +60,21 @@ const DOC_EMOJI: Record<string, string> = {
 
 function getStatusStyle(s: string) { return STATUS_STYLE[s] ?? STATUS_STYLE.pending!; }
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en", { month: "short", day: "numeric" });
+// Parse date string without timezone conversion to avoid UTC midnight shift artifacts
+function parseDateLocal(d: string): Date {
+  const part = d.split("T")[0] ?? d;
+  const [y, m, day] = part.split("-").map(Number);
+  return new Date(y!, m! - 1, day!);
+}
+
+function formatDate(d: string | null | undefined): string {
+  if (!d) return "";
+  return parseDateLocal(d).toLocaleDateString("en", { month: "short", day: "numeric" });
+}
+
+function formatDateFull(d: string | null | undefined): string {
+  if (!d) return "";
+  return parseDateLocal(d).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function formatCurrency(amount: number, currency: string): string {
@@ -245,9 +258,9 @@ function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; trip
           {/* Dates */}
           {(b.checkIn ?? b.checkOut) && (
             <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[#6B7280]">
-              <span>In: <span className="font-semibold text-[#1A1A2E]">{b.checkIn ? formatDate(b.checkIn) : "—"}</span></span>
+              <span>In: <span className="font-semibold text-[#1A1A2E]">{b.checkIn ? formatDateFull(b.checkIn) : "—"}</span></span>
               <ArrowRight size={11} className="text-[#D1D5DB]" />
-              <span>Out: <span className="font-semibold text-[#1A1A2E]">{b.checkOut ? formatDate(b.checkOut) : "—"}</span></span>
+              <span>Out: <span className="font-semibold text-[#1A1A2E]">{b.checkOut ? formatDateFull(b.checkOut) : "—"}</span></span>
             </div>
           )}
 

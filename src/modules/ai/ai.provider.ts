@@ -47,6 +47,7 @@ export interface AIGenerateRequest {
   };
   wishlist: string[];
   placesToVisit: string[];
+  notes?: string;
   existingBookings: Array<{
     type: string;
     name?: string;

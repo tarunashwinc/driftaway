@@ -16,6 +16,7 @@ export const createTripSchema = z.object({
       avoidCrowds: z.boolean().optional(),
       wishlist: z.array(z.string().max(200)).optional(),
       placesToVisit: z.array(z.string().max(200)).optional(),
+      notes: z.string().max(2000).optional(),
     })
     .optional(),
   bannerConfig: z
