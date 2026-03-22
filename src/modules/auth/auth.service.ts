@@ -49,6 +49,12 @@ export const authService = {
   ): Promise<{ message: string; devOtp?: string }> {
     const isDev = env.NODE_ENV === "development" || env.DEV_OTP_BYPASS;
 
+    // Whitelist check — only registered phone numbers can log in
+    const existingUser = await prisma.user.findFirst({ where: { phone } });
+    if (!existingUser) {
+      throw new ValidationError("This number is not registered. Contact the trip organiser to be added.");
+    }
+
     // Verify hCaptcha in production when token is provided
     if (!isDev && captchaToken) {
       await verifyCaptcha(captchaToken);
@@ -128,20 +134,16 @@ export const authService = {
       });
     }
 
-    // Upsert user by phone
-    const lastFour = phone.slice(-4);
-    const isNewUser = !(await prisma.user.findFirst({ where: { phone } }));
+    // Look up the existing user — only whitelisted phones can reach here
+    const existingUser = await prisma.user.findFirst({ where: { phone } });
+    if (!existingUser) {
+      throw new ValidationError("This number is not registered. Contact the trip organiser to be added.");
+    }
+    const isNewUser = false;
 
-    const user = await prisma.user.upsert({
-      where: { phone },
-      create: {
-        phone,
-        name: `Traveler ${lastFour}`,
-        lastLoginAt: new Date(),
-      },
-      update: {
-        lastLoginAt: new Date(),
-      },
+    const user = await prisma.user.update({
+      where: { id: existingUser.id },
+      data: { lastLoginAt: new Date() },
     });
 
     // Link the most recent OTP to the user (only for non-bypass flow)
