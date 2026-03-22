@@ -22,8 +22,23 @@ const app = Fastify({
 });
 
 // ─── Plugins ───
+// Accept both apex and www. variants of the frontend URL so that
+// browsers arriving via www.drift-away.in are not blocked by CORS.
+const allowedOrigins = new Set([
+  env.FRONTEND_URL,
+  env.FRONTEND_URL.replace("://", "://www."),
+  env.FRONTEND_URL.replace("://www.", "://"),
+]);
+
 await app.register(cors, {
-  origin: env.FRONTEND_URL,
+  origin: (origin, cb) => {
+    // Allow server-to-server calls (no Origin header) and any allowed origin
+    if (!origin || allowedOrigins.has(origin)) {
+      cb(null, true);
+    } else {
+      cb(new Error("CORS: origin not allowed"), false);
+    }
+  },
   credentials: true,
 });
 
