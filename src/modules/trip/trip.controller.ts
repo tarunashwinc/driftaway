@@ -1,11 +1,13 @@
 import fs from "fs";
 import path from "path";
 import type { FastifyRequest, FastifyReply } from "fastify";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import {
   UnauthorizedError,
   ValidationError,
   NotFoundError,
 } from "../../middleware/error-handler.js";
+import { s3, S3_BUCKET } from "../../config/s3.js";
 import {
   addBookingSchema,
   addChecklistItemSchema,
@@ -373,33 +375,91 @@ export const tripController = {
     const doc = docs.find((d) => d.id === request.params.docId);
     if (!doc) throw new NotFoundError("Document");
 
+    const filename = path.basename(doc.name);
+    const disposition = `inline; filename*=UTF-8''${encodeURIComponent(filename)}`;
+
+    // 1. S3-uploaded documents (new path)
+    if (doc.s3Key) {
+      try {
+        const s3Res = await s3.send(
+          new GetObjectCommand({ Bucket: S3_BUCKET, Key: doc.s3Key }),
+        );
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of s3Res.Body as AsyncIterable<Uint8Array>) {
+          chunks.push(chunk);
+        }
+        const buffer = Buffer.concat(chunks);
+        reply
+          .header("Content-Type", doc.mimeType)
+          .header("Content-Disposition", disposition)
+          .header("Cache-Control", "private, max-age=3600");
+        reply.send(buffer);
+        return;
+      } catch {
+        throw new NotFoundError("Document file");
+      }
+    }
+
+    // 2. Legacy seeded docs stored on disk
     const meta = doc.metadata as Record<string, unknown> | null;
     const rawPath = meta?.localPath as string | undefined;
 
-    // Resolve the file path — works on both Mac (dev) and Linux server (prod)
     const candidatePaths: string[] = [];
     if (rawPath) {
       candidatePaths.push(rawPath);
-      // Normalise Mac dev path → server path
       candidatePaths.push(rawPath.replace("/Users/tamjeed/dev/driftaway", "/opt/driftaway"));
-      // Fallback: just filename in app root Japan docs folder
-      const filename = path.basename(rawPath);
-      candidatePaths.push(path.join(process.cwd(), "Japan_Family_Trip_Docs", filename));
+      candidatePaths.push(path.join(process.cwd(), "Japan_Family_Trip_Docs", path.basename(rawPath)));
     }
 
     const resolvedPath = candidatePaths.find((p) => fs.existsSync(p));
-
     if (resolvedPath) {
-      const filename = path.basename(resolvedPath);
       const buffer = fs.readFileSync(resolvedPath);
       reply
         .header("Content-Type", doc.mimeType)
-        .header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(filename)}`)
+        .header("Content-Disposition", disposition)
         .header("Cache-Control", "private, max-age=3600");
       reply.send(buffer);
       return;
     }
 
     throw new NotFoundError("Document file");
+  },
+
+  async uploadDocument(
+    request: FastifyRequest<{ Params: TripParams }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const user = getUser(request);
+    const data = await request.file();
+    if (!data) throw new ValidationError("No file uploaded");
+
+    const buffer = await data.toBuffer();
+    const fields = data.fields as Record<string, { value: string } | undefined>;
+    const docType = fields.type?.value ?? "other";
+    const bookingId = fields.bookingId?.value;
+
+    const doc = await tripService.uploadTripDocument(
+      request.params.id,
+      user.userId,
+      buffer,
+      data.filename,
+      data.mimetype,
+      docType,
+      bookingId,
+    );
+    reply.status(201).send({ success: true, data: doc });
+  },
+
+  async deleteDocument(
+    request: FastifyRequest<{ Params: TripParams & { docId: string } }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const user = getUser(request);
+    await tripService.deleteTripDocument(
+      request.params.id,
+      user.userId,
+      request.params.docId,
+    );
+    reply.send({ success: true });
   },
 };

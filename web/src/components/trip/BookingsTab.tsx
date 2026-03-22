@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Plus, Plane, Hotel, Train, Car, ExternalLink, ArrowRight, Download, FileText,
+  Plus, Plane, Hotel, Train, Car, ExternalLink, ArrowRight,
+  Download, FileText, Trash2, Paperclip,
 } from "lucide-react";
 import Link from "next/link";
 import { api, getAccessToken } from "../../lib/api";
@@ -60,7 +61,6 @@ const DOC_EMOJI: Record<string, string> = {
 
 function getStatusStyle(s: string) { return STATUS_STYLE[s] ?? STATUS_STYLE.pending!; }
 
-// Parse date string without timezone conversion to avoid UTC midnight shift artifacts
 function parseDateLocal(d: string): Date {
   const part = d.split("T")[0] ?? d;
   const [y, m, day] = part.split("-").map(Number);
@@ -91,9 +91,17 @@ function extractIATA(loc: string) {
   return loc.match(/\(([A-Z]{3})\)/)?.[1] ?? loc.slice(0, 3).toUpperCase();
 }
 
-// ── Inline document attachment ────────────────────────────────────────────────
+// ── Document attachment row (with delete) ────────────────────────────────────
 
-function DocAttachment({ doc, tripId }: { doc: TripDocument; tripId: string }) {
+function DocAttachment({
+  doc,
+  tripId,
+  onDelete,
+}: {
+  doc: TripDocument;
+  tripId: string;
+  onDelete: (docId: string) => void;
+}) {
   const emoji = DOC_EMOJI[doc.type] ?? "📄";
   const [loading, setLoading] = useState(false);
 
@@ -113,38 +121,124 @@ function DocAttachment({ doc, tripId }: { doc: TripDocument; tripId: string }) {
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch {
-      // silently fail — file may not be on disk
+      // silently fail
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <button
-      onClick={handleOpen}
-      disabled={loading}
-      className="flex items-center gap-2.5 w-full mt-3 px-3 py-2.5 rounded-xl border border-dashed border-[#E5E7EB] bg-[#FAFAFA] hover:bg-[#F0EEE9] hover:border-[#FF6B35]/30 active:scale-[0.98] transition-all text-left group disabled:opacity-60"
-    >
-      <div className="w-8 h-8 rounded-lg bg-white border border-black/8 flex items-center justify-center text-sm shrink-0 shadow-sm">
-        {loading ? <span className="animate-spin text-xs">⏳</span> : emoji}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-semibold text-[#1A1A2E] truncate leading-tight">{doc.name}</p>
-        <p className="text-[10px] text-[#9CA3AF] mt-0.5">{formatSize(doc.sizeBytes)}</p>
-      </div>
-      <div className="shrink-0 flex items-center gap-1 text-[10px] font-semibold text-[#FF6B35] opacity-0 group-hover:opacity-100 transition-opacity">
-        <Download size={12} strokeWidth={2.5} />
-        <span>{loading ? "Loading…" : "Open"}</span>
-      </div>
-    </button>
+    <div className="flex items-center gap-2 mt-2">
+      <button
+        onClick={handleOpen}
+        disabled={loading}
+        className="flex items-center gap-2.5 flex-1 px-3 py-2 rounded-xl border border-dashed border-[#E5E7EB] bg-[#FAFAFA] hover:bg-[#F0EEE9] hover:border-[#FF6B35]/30 active:scale-[0.98] transition-all text-left group disabled:opacity-60"
+      >
+        <div className="w-7 h-7 rounded-lg bg-white border border-black/8 flex items-center justify-center text-sm shrink-0 shadow-sm">
+          {loading ? <span className="animate-spin text-xs">⏳</span> : emoji}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] font-semibold text-[#1A1A2E] truncate leading-tight">{doc.name}</p>
+          <p className="text-[10px] text-[#9CA3AF] mt-0.5">{formatSize(doc.sizeBytes)}</p>
+        </div>
+        <div className="shrink-0 flex items-center gap-1 text-[10px] font-semibold text-[#FF6B35] opacity-0 group-hover:opacity-100 transition-opacity">
+          <Download size={11} strokeWidth={2.5} />
+          <span>{loading ? "Loading…" : "Open"}</span>
+        </div>
+      </button>
+
+      {/* Delete document button */}
+      <button
+        type="button"
+        onClick={() => onDelete(doc.id)}
+        className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 active:scale-90 transition-all shrink-0"
+        aria-label="Remove document"
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
+  );
+}
+
+// ── Document upload button ────────────────────────────────────────────────────
+
+function UploadDocButton({
+  tripId,
+  bookingId,
+  onUploaded,
+}: {
+  tripId: string;
+  bookingId: string;
+  onUploaded: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    try {
+      const token = getAccessToken();
+      const form = new FormData();
+      form.append("file", file);
+      form.append("type", "other");
+      form.append("bookingId", bookingId);
+
+      const res = await fetch(`/api/v1/trips/${tripId}/documents`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (!res.ok) {
+        const j = await res.json() as { error?: { message?: string } };
+        throw new Error(j.error?.message ?? "Upload failed");
+      }
+      onUploaded();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+        }}
+      />
+      <button
+        type="button"
+        disabled={uploading}
+        onClick={() => fileRef.current?.click()}
+        className="flex items-center gap-1.5 text-[11px] font-semibold text-[#9CA3AF] hover:text-[#FF6B35] transition-colors disabled:opacity-50"
+      >
+        {uploading ? (
+          <><Spinner size={12} /><span>Uploading…</span></>
+        ) : (
+          <><Paperclip size={12} strokeWidth={2.5} /><span>Attach document</span></>
+        )}
+      </button>
+      {error && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
+    </div>
   );
 }
 
 // ── Flight card ───────────────────────────────────────────────────────────────
 
-function FlightCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tripId: string }) {
+function FlightCard({
+  b, docs, tripId, onDeleteDoc, onUploadDone,
+}: { b: Booking; docs: TripDocument[]; tripId: string; onDeleteDoc: (id: string) => void; onUploadDone: () => void }) {
   const s = getStatusStyle(b.status);
 
   return (
@@ -220,19 +314,22 @@ function FlightCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tri
         )}
       </div>
 
-      {/* Inline documents */}
-      {docs.length > 0 && (
-        <div className="px-4 pb-4">
-          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} tripId={tripId} />)}
-        </div>
-      )}
+      {/* Documents */}
+      <div className="px-4 pb-4">
+        {docs.map((doc) => (
+          <DocAttachment key={doc.id} doc={doc} tripId={tripId} onDelete={onDeleteDoc} />
+        ))}
+        <UploadDocButton tripId={tripId} bookingId={b.id} onUploaded={onUploadDone} />
+      </div>
     </div>
   );
 }
 
 // ── Hotel card ────────────────────────────────────────────────────────────────
 
-function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tripId: string }) {
+function HotelCard({
+  b, docs, tripId, onDeleteDoc, onUploadDone,
+}: { b: Booking; docs: TripDocument[]; tripId: string; onDeleteDoc: (id: string) => void; onUploadDone: () => void }) {
   const s = getStatusStyle(b.status);
   const inclusions = b.details?.inclusions as string[] | undefined;
   const roomType   = b.details?.roomType   as string | undefined;
@@ -246,7 +343,6 @@ function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; trip
         </div>
 
         <div className="flex-1 min-w-0">
-          {/* Title row */}
           <div className="flex items-start justify-between gap-2 mb-1">
             <div className="min-w-0">
               <p className="text-xs font-bold text-[#9CA3AF] uppercase tracking-widest mb-0.5">Hotel</p>
@@ -255,7 +351,6 @@ function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; trip
             <span className={`shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full capitalize ${s.classes}`}>{s.label}</span>
           </div>
 
-          {/* Dates */}
           {(b.checkIn ?? b.checkOut) && (
             <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[#6B7280]">
               <span>In: <span className="font-semibold text-[#1A1A2E]">{b.checkIn ? formatDateFull(b.checkIn) : "—"}</span></span>
@@ -264,7 +359,6 @@ function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; trip
             </div>
           )}
 
-          {/* Chips */}
           {(roomType ?? (inclusions && inclusions.length > 0)) && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {roomType && (
@@ -276,7 +370,6 @@ function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; trip
             </div>
           )}
 
-          {/* Ref + cost */}
           <div className="flex items-center justify-between mt-2 gap-2">
             {b.confirmationRef && (
               <span className="text-[10px] font-mono bg-[#F0EEE9] text-[#6B7280] px-2 py-0.5 rounded-full">Ref: {b.confirmationRef}</span>
@@ -288,8 +381,10 @@ function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; trip
 
           {notes && <p className="text-[10px] text-amber-500 mt-1.5 font-medium">⚠️ {notes}</p>}
 
-          {/* Inline documents */}
-          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} tripId={tripId} />)}
+          {docs.map((doc) => (
+            <DocAttachment key={doc.id} doc={doc} tripId={tripId} onDelete={onDeleteDoc} />
+          ))}
+          <UploadDocButton tripId={tripId} bookingId={b.id} onUploaded={onUploadDone} />
         </div>
       </div>
     </div>
@@ -298,7 +393,9 @@ function HotelCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; trip
 
 // ── Generic card ──────────────────────────────────────────────────────────────
 
-function GenericCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tripId: string }) {
+function GenericCard({
+  b, docs, tripId, onDeleteDoc, onUploadDone,
+}: { b: Booking; docs: TripDocument[]; tripId: string; onDeleteDoc: (id: string) => void; onUploadDone: () => void }) {
   const s = getStatusStyle(b.status);
   const iconMap: Record<string, ReactNode> = {
     train: <Train size={18} className="text-blue-500" strokeWidth={1.8} />,
@@ -328,22 +425,29 @@ function GenericCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tr
               <span className="text-sm font-bold text-[#1A1A2E] shrink-0">{formatCurrency(b.cost, b.currency)}</span>
             )}
           </div>
-          {docs.map((doc) => <DocAttachment key={doc.id} doc={doc} tripId={tripId} />)}
+          {docs.map((doc) => (
+            <DocAttachment key={doc.id} doc={doc} tripId={tripId} onDelete={onDeleteDoc} />
+          ))}
+          <UploadDocButton tripId={tripId} bookingId={b.id} onUploaded={onUploadDone} />
         </div>
       </div>
     </div>
   );
 }
 
-function BookingCard({ b, docs, tripId }: { b: Booking; docs: TripDocument[]; tripId: string }) {
-  if (b.type === "flight") return <FlightCard b={b} docs={docs} tripId={tripId} />;
-  if (b.type === "hotel")  return <HotelCard  b={b} docs={docs} tripId={tripId} />;
-  return <GenericCard b={b} docs={docs} tripId={tripId} />;
+function BookingCard({
+  b, docs, tripId, onDeleteDoc, onUploadDone,
+}: { b: Booking; docs: TripDocument[]; tripId: string; onDeleteDoc: (id: string) => void; onUploadDone: () => void }) {
+  if (b.type === "flight") return <FlightCard b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} />;
+  if (b.type === "hotel")  return <HotelCard  b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} />;
+  return <GenericCard b={b} docs={docs} tripId={tripId} onDeleteDoc={onDeleteDoc} onUploadDone={onUploadDone} />;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function BookingsTab({ tripId }: { tripId: string }) {
+  const queryClient = useQueryClient();
+
   const { data: bData, isLoading, isError } = useQuery({
     queryKey: ["trips", tripId, "bookings"],
     queryFn:  () => api.get<BookingsResponse>(`/trips/${tripId}/bookings`),
@@ -353,22 +457,34 @@ export function BookingsTab({ tripId }: { tripId: string }) {
     queryFn:  () => api.get<DocumentsResponse>(`/trips/${tripId}/documents`),
   });
 
-  const bookings  = bData?.data ?? [];
-  const allDocs   = dData?.data ?? [];
+  // Delete document mutation
+  const { mutate: deleteDoc } = useMutation({
+    mutationFn: (docId: string) =>
+      api.delete<{ success: boolean }>(`/trips/${tripId}/documents/${docId}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["trips", tripId, "documents"] });
+    },
+  });
 
-  // Build a map: confirmationRef → documents[]
-  const docsByRef = new Map<string, TripDocument[]>();
+  const bookings = bData?.data ?? [];
+  const allDocs  = dData?.data ?? [];
+
+  // Map documents by bookingId (stored in metadata)
+  const docsByBookingId = new Map<string, TripDocument[]>();
   for (const doc of allDocs) {
-    const ref = doc.metadata?.bookingRef as string | undefined;
-    if (ref) {
-      const existing = docsByRef.get(ref) ?? [];
+    const bid = doc.metadata?.bookingId as string | undefined;
+    if (bid) {
+      const existing = docsByBookingId.get(bid) ?? [];
       existing.push(doc);
-      docsByRef.set(ref, existing);
+      docsByBookingId.set(bid, existing);
     }
   }
 
-  const getDocsForBooking = (b: Booking) =>
-    b.confirmationRef ? (docsByRef.get(b.confirmationRef) ?? []) : [];
+  const getDocsForBooking = (b: Booking) => docsByBookingId.get(b.id) ?? [];
+
+  const refreshDocs = () => {
+    void queryClient.invalidateQueries({ queryKey: ["trips", tripId, "documents"] });
+  };
 
   if (isLoading) return <div className="flex justify-center py-14"><Spinner /></div>;
   if (isError)   return <div className="text-center py-10"><div className="text-4xl mb-3">⚠️</div><p className="text-[#9CA3AF] text-sm">Failed to load bookings</p></div>;
@@ -405,7 +521,14 @@ export function BookingsTab({ tripId }: { tripId: string }) {
             </span>
           </div>
           {section.items.map((b) => (
-            <BookingCard key={b.id} b={b} docs={getDocsForBooking(b)} tripId={tripId} />
+            <BookingCard
+              key={b.id}
+              b={b}
+              docs={getDocsForBooking(b)}
+              tripId={tripId}
+              onDeleteDoc={deleteDoc}
+              onUploadDone={refreshDocs}
+            />
           ))}
         </div>
       ))}

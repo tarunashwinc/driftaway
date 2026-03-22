@@ -1,9 +1,12 @@
 import { Prisma } from "@prisma/client";
+import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { prisma } from "../../config/prisma.js";
+import { s3, S3_BUCKET } from "../../config/s3.js";
 import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  ValidationError,
 } from "../../middleware/error-handler.js";
 import type {
   AddBookingInput,
@@ -1114,5 +1117,85 @@ export const tripService = {
       },
     });
     return docs;
+  },
+
+  // Upload a document to S3 and store record in DB
+  async uploadTripDocument(
+    tripId: string,
+    userId: string,
+    buffer: Buffer,
+    fileName: string,
+    mimeType: string,
+    docType: string,
+    bookingId?: string,
+  ) {
+    await requireMember(tripId, userId);
+
+    const ALLOWED_MIME = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+    if (!ALLOWED_MIME.includes(mimeType)) {
+      throw new ValidationError("Only PDF, JPEG, PNG or WebP files are allowed");
+    }
+
+    const ext = fileName.split(".").pop()?.toLowerCase() ?? "bin";
+    const docId = crypto.randomUUID();
+    const s3Key = `documents/${tripId}/${docId}.${ext}`;
+
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: s3Key,
+        Body: buffer,
+        ContentType: mimeType,
+      }),
+    );
+
+    const validTypes = [
+      "passport", "visa", "ticket", "insurance",
+      "hotel_confirmation", "itinerary", "other",
+    ];
+    const safeType = validTypes.includes(docType) ? docType : "other";
+
+    const doc = await prisma.document.create({
+      data: {
+        userId,
+        tripId,
+        type: safeType as import("@prisma/client").DocumentType,
+        name: fileName,
+        s3Key,
+        mimeType,
+        sizeBytes: buffer.length,
+        metadata: bookingId ? ({ bookingId } as import("@prisma/client").Prisma.InputJsonValue) : undefined,
+      },
+    });
+
+    return doc;
+  },
+
+  // Delete a document from S3 and DB
+  async deleteTripDocument(tripId: string, userId: string, docId: string) {
+    await requireMember(tripId, userId);
+
+    const doc = await prisma.document.findFirst({
+      where: { id: docId, tripId },
+    });
+    if (!doc) throw new NotFoundError("Document");
+
+    // Remove from S3 (best-effort — don't block DB deletion on S3 error)
+    if (doc.s3Key) {
+      try {
+        await s3.send(
+          new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: doc.s3Key }),
+        );
+      } catch {
+        // S3 deletion non-fatal
+      }
+    }
+
+    await prisma.document.delete({ where: { id: docId } });
   },
 };

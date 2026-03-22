@@ -1,20 +1,56 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { Home, User } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { Spinner } from "../../components/ui/spinner";
+import { getAccessToken, setAccessToken, registerAuthFailureCallback } from "../../lib/api";
+import { queryClient } from "../../lib/queryClient";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
+  const restoring = useRef(false);
 
+  // Register the auth failure callback once — called when a refresh token attempt fails
   useEffect(() => {
-    if (!isAuthenticated) router.replace("/login");
-  }, [isAuthenticated, router]);
+    registerAuthFailureCallback(() => {
+      queryClient.clear();
+      logout();
+      router.replace("/login");
+    });
+  }, [logout, router]);
+
+  // On mount: if authenticated but access token is missing (page refresh / back navigation),
+  // attempt a silent token restore via the HTTP-only refresh cookie.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (getAccessToken()) return; // already have a token in memory
+    if (restoring.current) return;
+    restoring.current = true;
+
+    fetch("/api/v1/auth/refresh", { method: "POST", credentials: "include" })
+      .then((res) => {
+        if (res.ok) {
+          return res.json() as Promise<{ data: { accessToken: string } }>;
+        }
+        throw new Error("refresh failed");
+      })
+      .then(({ data }) => {
+        setAccessToken(data.accessToken);
+      })
+      .catch(() => {
+        queryClient.clear();
+        logout();
+        router.replace("/login");
+      })
+      .finally(() => {
+        restoring.current = false;
+      });
+  }, [isAuthenticated, logout, router]);
 
   if (!isAuthenticated) {
     return (

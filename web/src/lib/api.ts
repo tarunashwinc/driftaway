@@ -12,6 +12,7 @@ class ApiError extends Error {
 }
 
 let accessToken: string | null = null;
+let authFailureCallback: (() => void) | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
@@ -19,6 +20,10 @@ export function setAccessToken(token: string | null) {
 
 export function getAccessToken() {
   return accessToken;
+}
+
+export function registerAuthFailureCallback(cb: () => void) {
+  authFailureCallback = cb;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -57,9 +62,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
           if (retryRes.ok) {
             return retryRes.json() as Promise<T>;
           }
+        } else {
+          // Refresh failed — session is dead, trigger logout
+          accessToken = null;
+          authFailureCallback?.();
         }
       } catch {
-        // Refresh failed
+        // Network error during refresh
+        accessToken = null;
+        authFailureCallback?.();
       }
     }
 

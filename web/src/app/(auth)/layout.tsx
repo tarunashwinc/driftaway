@@ -1,4 +1,23 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "../../stores/authStore";
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuthStore();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace("/trips");
+    }
+  }, [isAuthenticated, router]);
+
+  if (isAuthenticated) {
+    return null;
+  }
+
   return (
     <main
       className="min-h-dvh flex flex-col items-center justify-center px-5 py-10 relative overflow-hidden"
