@@ -65,36 +65,46 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { href: "/profile", label: "Profile", icon: User },
   ];
 
+  // Hide the global bottom nav on full-screen sub-flow pages that have
+  // their own header + action bar (back button, Cancel/Save, etc.)
+  const isSubFlow =
+    /\/trips\/[^/]+\/bookings\/new/.test(pathname) ||
+    /\/trips\/new/.test(pathname);
+
   return (
     <div className="min-h-dvh flex flex-col bg-surface">
-      <main className="flex-1 pb-24 overflow-y-auto">{children}</main>
+      <main className={`flex-1 overflow-y-auto ${isSubFlow ? "" : "pb-24"}`}>
+        {children}
+      </main>
 
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50">
-        <div className="mx-4 mb-4 bg-[#1A1A2E] rounded-3xl shadow-float flex items-center justify-around p-2">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-            return (
-              <Link key={item.href} href={item.href} className="flex-1 tap-highlight-none">
-                <div className={`flex flex-col items-center gap-1 py-2.5 px-4 rounded-2xl transition-all duration-200 ${
-                  isActive ? "bg-[#FF6B35]" : "hover:bg-white/5"
-                }`}>
-                  <item.icon
-                    size={20}
-                    strokeWidth={isActive ? 2.5 : 1.8}
-                    className={isActive ? "text-white" : "text-white/40"}
-                  />
-                  <span className={`text-[10px] font-semibold tracking-wide ${
-                    isActive ? "text-white" : "text-white/40"
+      {/* Bottom nav — hidden on sub-flow pages */}
+      {!isSubFlow && (
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50">
+          <div className="mx-4 mb-4 bg-[#1A1A2E] rounded-3xl shadow-float flex items-center justify-around p-2">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+              return (
+                <Link key={item.href} href={item.href} className="flex-1 tap-highlight-none">
+                  <div className={`flex flex-col items-center gap-1 py-2.5 px-4 rounded-2xl transition-all duration-200 ${
+                    isActive ? "bg-[#FF6B35]" : "hover:bg-white/5"
                   }`}>
-                    {item.label.toUpperCase()}
-                  </span>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
+                    <item.icon
+                      size={20}
+                      strokeWidth={isActive ? 2.5 : 1.8}
+                      className={isActive ? "text-white" : "text-white/40"}
+                    />
+                    <span className={`text-[10px] font-semibold tracking-wide ${
+                      isActive ? "text-white" : "text-white/40"
+                    }`}>
+                      {item.label.toUpperCase()}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      )}
     </div>
   );
 }

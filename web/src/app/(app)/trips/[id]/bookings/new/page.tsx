@@ -166,7 +166,7 @@ export default function NewBookingPage() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="px-4 py-5 flex flex-col gap-5 max-w-xl mx-auto pb-32">
+      <form onSubmit={handleSubmit} className="px-4 py-5 flex flex-col gap-5 max-w-xl mx-auto pb-28">
 
         {/* Type selector */}
         <div>
@@ -354,7 +354,7 @@ export default function NewBookingPage() {
       </form>
 
       {/* Sticky submit */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#F3F4F6] px-4 py-4 safe-bottom">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-t border-[#F3F4F6] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="max-w-xl mx-auto flex gap-3">
           <button
             type="button"
