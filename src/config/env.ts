@@ -33,6 +33,9 @@ const envSchema = z.object({
   WHATSAPP_PHONE_NUMBER_ID: z.string().default(""),
 
   S3_ENDPOINT: z.string().default("http://localhost:9000"),
+  // Public-facing base URL for serving stored files (e.g. https://api.drift-away.in/storage).
+  // Falls back to S3_ENDPOINT when not set (works fine in local dev).
+  S3_PUBLIC_URL: z.string().default(""),
   S3_REGION: z.string().default("us-east-1"),
   S3_BUCKET: z.string().default("driftaway"),
   S3_ACCESS_KEY: z.string().default("minioadmin"),

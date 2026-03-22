@@ -115,8 +115,10 @@ export const userController = {
       ContentType: data.mimetype,
     }));
 
-    // Build public URL
-    const avatarUrl = `${env.S3_ENDPOINT}/${S3_BUCKET}/${key}`;
+    // Build public URL — use S3_PUBLIC_URL if set (production CDN/proxy),
+    // otherwise fall back to the raw S3 endpoint (local dev).
+    const publicBase = env.S3_PUBLIC_URL || env.S3_ENDPOINT;
+    const avatarUrl = `${publicBase}/${S3_BUCKET}/${key}`;
 
     const user = await userService.updateProfile(request.user.userId, { avatarUrl });
     return reply.send({ success: true, data: { avatarUrl: user.avatarUrl } });
