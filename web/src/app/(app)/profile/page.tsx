@@ -299,10 +299,20 @@ export default function ProfilePage() {
     },
   });
 
+  const [deletingMinorId, setDeletingMinorId] = useState<string | null>(null);
+
   const { mutate: deleteMinor } = useMutation({
-    mutationFn: (id: string) =>
-      api.delete<{ success: boolean }>(`/users/me/minors/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["minors"] }),
+    mutationFn: (id: string) => {
+      setDeletingMinorId(id);
+      return api.delete<{ success: boolean }>(`/users/me/minors/${id}`);
+    },
+    onSuccess: (_, id) => {
+      // Optimistic update — remove immediately from local state
+      setMinors((prev) => prev.filter((m) => m.id !== id));
+      queryClient.invalidateQueries({ queryKey: ["minors"] });
+      setDeletingMinorId(null);
+    },
+    onError: () => setDeletingMinorId(null),
   });
 
   const { mutate: updateMinor, isPending: isUpdatingMinor } = useMutation({
@@ -908,10 +918,13 @@ export default function ProfilePage() {
                       <button
                         type="button"
                         onClick={() => deleteMinor(minor.id)}
-                        className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 active:scale-90 transition-all shrink-0"
+                        disabled={deletingMinorId === minor.id}
+                        className="w-8 h-8 rounded-xl bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 active:scale-90 transition-all shrink-0 disabled:opacity-50"
                         aria-label={`Remove ${minor.name}`}
                       >
-                        <Trash2 size={14} />
+                        {deletingMinorId === minor.id
+                          ? <Spinner size={14} />
+                          : <Trash2 size={14} />}
                       </button>
                     </div>
                   )}

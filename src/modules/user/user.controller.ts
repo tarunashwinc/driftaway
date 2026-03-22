@@ -113,7 +113,6 @@ export const userController = {
       Key: key,
       Body: buffer,
       ContentType: data.mimetype,
-      ACL: "public-read",
     }));
 
     // Build public URL

@@ -374,11 +374,24 @@ export const tripController = {
     if (!doc) throw new NotFoundError("Document");
 
     const meta = doc.metadata as Record<string, unknown> | null;
-    const localPath = meta?.localPath as string | undefined;
+    const rawPath = meta?.localPath as string | undefined;
 
-    if (localPath && fs.existsSync(localPath)) {
-      const filename = path.basename(localPath);
-      const buffer = fs.readFileSync(localPath);
+    // Resolve the file path — works on both Mac (dev) and Linux server (prod)
+    const candidatePaths: string[] = [];
+    if (rawPath) {
+      candidatePaths.push(rawPath);
+      // Normalise Mac dev path → server path
+      candidatePaths.push(rawPath.replace("/Users/tamjeed/dev/driftaway", "/opt/driftaway"));
+      // Fallback: just filename in app root Japan docs folder
+      const filename = path.basename(rawPath);
+      candidatePaths.push(path.join(process.cwd(), "Japan_Family_Trip_Docs", filename));
+    }
+
+    const resolvedPath = candidatePaths.find((p) => fs.existsSync(p));
+
+    if (resolvedPath) {
+      const filename = path.basename(resolvedPath);
+      const buffer = fs.readFileSync(resolvedPath);
       reply
         .header("Content-Type", doc.mimeType)
         .header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(filename)}`)
