@@ -28,9 +28,15 @@ export function registerAuthFailureCallback(cb: () => void) {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
+
+  // Only set Content-Type for requests that actually send a JSON body.
+  // DELETE/GET requests have no body — sending Content-Type: application/json
+  // with an empty body causes Fastify to return 400 (body parsing failure).
+  if (options.body) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (accessToken) {
     headers["Authorization"] = `Bearer ${accessToken}`;

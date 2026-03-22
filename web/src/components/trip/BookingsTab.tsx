@@ -139,9 +139,29 @@ function ConfirmDeleteModal({
   );
 }
 
-// ── Document attachment row (with delete) ────────────────────────────────────
+// ── Document section: chip list + add button ─────────────────────────────────
 
-function DocAttachment({
+const DOC_MIME_ICON: Record<string, string> = {
+  "application/pdf": "📄",
+  "image/jpeg": "🖼️",
+  "image/png": "🖼️",
+  "image/webp": "🖼️",
+};
+
+async function openDoc(tripId: string, docId: string) {
+  const token = getAccessToken();
+  const res = await fetch(`/api/v1/trips/${tripId}/documents/${docId}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to load document");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+function DocChip({
   doc,
   tripId,
   onDelete,
@@ -150,74 +170,64 @@ function DocAttachment({
   tripId: string;
   onDelete: (docId: string) => void;
 }) {
-  const emoji = DOC_EMOJI[doc.type] ?? "📄";
-  const [loading, setLoading] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const emoji = DOC_MIME_ICON[doc.mimeType] ?? DOC_EMOJI[doc.type] ?? "📄";
 
   const handleOpen = async () => {
-    if (loading) return;
-    setLoading(true);
-    try {
-      const token = getAccessToken();
-      const res = await fetch(`/api/v1/trips/${tripId}/documents/${doc.id}/download`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error("Failed to load document");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    } catch {
-      // silently fail
-    } finally {
-      setLoading(false);
-    }
+    if (opening) return;
+    setOpening(true);
+    try { await openDoc(tripId, doc.id); } catch { /* silent */ } finally { setOpening(false); }
   };
 
+  // Shorten file name for display
+  const shortName = (() => {
+    const noExt = doc.name.replace(/\.[^.]+$/, "");
+    return noExt.length > 18 ? noExt.slice(0, 16) + "…" : noExt;
+  })();
+
   return (
-    <div className="flex items-center gap-2 mt-2">
+    <div className="flex items-center gap-0 rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] overflow-hidden group hover:border-[#FF6B35]/40 hover:bg-[#FFF8F5] transition-all">
+      {/* Clickable doc area */}
       <button
+        type="button"
         onClick={handleOpen}
-        disabled={loading}
-        className="flex items-center gap-2.5 flex-1 px-3 py-2 rounded-xl border border-dashed border-[#E5E7EB] bg-[#FAFAFA] hover:bg-[#F0EEE9] hover:border-[#FF6B35]/30 active:scale-[0.98] transition-all text-left group disabled:opacity-60"
+        disabled={opening}
+        className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0 text-left active:scale-[0.97] transition-transform disabled:opacity-60"
       >
-        <div className="w-7 h-7 rounded-lg bg-white border border-black/8 flex items-center justify-center text-sm shrink-0 shadow-sm">
-          {loading ? <span className="animate-spin text-xs">⏳</span> : emoji}
+        <span className="text-sm shrink-0">
+          {opening ? "⏳" : emoji}
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold text-[#1A1A2E] leading-tight truncate">{shortName}</p>
+          <p className="text-[10px] text-[#9CA3AF]">{formatSize(doc.sizeBytes)}</p>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-semibold text-[#1A1A2E] truncate leading-tight">{doc.name}</p>
-          <p className="text-[10px] text-[#9CA3AF] mt-0.5">{formatSize(doc.sizeBytes)}</p>
-        </div>
-        <div className="shrink-0 flex items-center gap-1 text-[10px] font-semibold text-[#FF6B35] opacity-0 group-hover:opacity-100 transition-opacity">
-          <Download size={11} strokeWidth={2.5} />
-          <span>{loading ? "Loading…" : "Open"}</span>
-        </div>
+        <Download size={10} className="shrink-0 text-[#FF6B35] opacity-0 group-hover:opacity-100 transition-opacity ml-1" strokeWidth={2.5} />
       </button>
 
+      {/* Delete button — subtle right border */}
       <button
         type="button"
         onClick={() => onDelete(doc.id)}
-        className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 active:scale-90 transition-all shrink-0"
+        className="w-7 h-full border-l border-[#F3F4F6] flex items-center justify-center text-[#D1D5DB] hover:text-red-400 hover:bg-red-50 transition-all shrink-0"
         aria-label="Remove document"
       >
-        <Trash2 size={13} />
+        <Trash2 size={11} strokeWidth={2} />
       </button>
     </div>
   );
 }
 
-// ── Document upload button ────────────────────────────────────────────────────
-
-function UploadDocButton({
+function DocSection({
+  docs,
   tripId,
   bookingId,
+  onDelete,
   onUploaded,
 }: {
+  docs: TripDocument[];
   tripId: string;
   bookingId: string;
+  onDelete: (docId: string) => void;
   onUploaded: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -233,7 +243,6 @@ function UploadDocButton({
       form.append("file", file);
       form.append("type", "other");
       form.append("bookingId", bookingId);
-
       const res = await fetch(`/api/v1/trips/${tripId}/documents`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -253,30 +262,49 @@ function UploadDocButton({
   };
 
   return (
-    <div className="mt-2">
+    <div className="mt-3 pt-3 border-t border-[#F3F4F6]">
+      {/* Section label */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest flex items-center gap-1">
+          <FileText size={10} strokeWidth={2.5} />
+          Documents {docs.length > 0 && <span className="ml-0.5 font-bold text-[#1A1A2E]">· {docs.length}</span>}
+        </span>
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={() => fileRef.current?.click()}
+          className="flex items-center gap-1 text-[10px] font-semibold text-[#9CA3AF] hover:text-[#FF6B35] transition-colors disabled:opacity-50 px-2 py-1 rounded-lg hover:bg-[#FFF8F5]"
+        >
+          {uploading ? <><Spinner size={10} /><span>Uploading…</span></> : <><Paperclip size={10} strokeWidth={2.5} /><span>Attach</span></>}
+        </button>
+      </div>
+
       <input
         ref={fileRef}
         type="file"
         accept=".pdf,image/jpeg,image/png,image/webp"
         className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void handleFile(f);
-        }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); }}
       />
-      <button
-        type="button"
-        disabled={uploading}
-        onClick={() => fileRef.current?.click()}
-        className="flex items-center gap-1.5 text-[11px] font-semibold text-[#9CA3AF] hover:text-[#FF6B35] transition-colors disabled:opacity-50"
-      >
-        {uploading ? (
-          <><Spinner size={12} /><span>Uploading…</span></>
-        ) : (
-          <><Paperclip size={12} strokeWidth={2.5} /><span>Attach document</span></>
-        )}
-      </button>
-      {error && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
+
+      {/* Doc chips grid */}
+      {docs.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          {docs.map((doc) => (
+            <DocChip key={doc.id} doc={doc} tripId={tripId} onDelete={onDelete} />
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#E5E7EB] text-[11px] text-[#C4C9D4] hover:border-[#FF6B35]/40 hover:text-[#FF6B35]/70 hover:bg-[#FFF8F5] transition-all"
+        >
+          <Paperclip size={11} strokeWidth={2} />
+          <span>Tap to attach a document (PDF or image)</span>
+        </button>
+      )}
+      {error && <p className="text-[10px] text-red-500 mt-1.5">{error}</p>}
     </div>
   );
 }
@@ -412,10 +440,7 @@ function FlightCard({
 
       {/* Documents */}
       <div className="px-4 pb-4">
-        {docs.map((doc) => (
-          <DocAttachment key={doc.id} doc={doc} tripId={tripId} onDelete={onDeleteDoc} />
-        ))}
-        <UploadDocButton tripId={tripId} bookingId={b.id} onUploaded={onUploadDone} />
+        <DocSection docs={docs} tripId={tripId} bookingId={b.id} onDelete={onDeleteDoc} onUploaded={onUploadDone} />
       </div>
     </div>
   );
@@ -477,10 +502,7 @@ function HotelCard({
 
           {notes && <p className="text-[10px] text-amber-500 mt-1.5 font-medium">⚠️ {notes}</p>}
 
-          {docs.map((doc) => (
-            <DocAttachment key={doc.id} doc={doc} tripId={tripId} onDelete={onDeleteDoc} />
-          ))}
-          <UploadDocButton tripId={tripId} bookingId={b.id} onUploaded={onUploadDone} />
+          <DocSection docs={docs} tripId={tripId} bookingId={b.id} onDelete={onDeleteDoc} onUploaded={onUploadDone} />
         </div>
       </div>
     </div>
@@ -521,10 +543,7 @@ function GenericCard({
               <span className="text-sm font-bold text-[#1A1A2E] shrink-0">{formatCurrency(b.cost, b.currency)}</span>
             )}
           </div>
-          {docs.map((doc) => (
-            <DocAttachment key={doc.id} doc={doc} tripId={tripId} onDelete={onDeleteDoc} />
-          ))}
-          <UploadDocButton tripId={tripId} bookingId={b.id} onUploaded={onUploadDone} />
+          <DocSection docs={docs} tripId={tripId} bookingId={b.id} onDelete={onDeleteDoc} onUploaded={onUploadDone} />
         </div>
       </div>
     </div>
@@ -654,10 +673,12 @@ function TripDocumentsSection({
         </span>
       </div>
       <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.08)] border border-black/5 px-4 py-3">
-        <p className="text-[10px] text-[#9CA3AF] mb-1">General trip documents (not linked to a specific booking)</p>
-        {docs.map((doc) => (
-          <DocAttachment key={doc.id} doc={doc} tripId={tripId} onDelete={onDelete} />
-        ))}
+        <p className="text-[10px] text-[#9CA3AF] mb-2">General trip documents (not linked to a specific booking)</p>
+        <div className="flex flex-col gap-1.5">
+          {docs.map((doc) => (
+            <DocChip key={doc.id} doc={doc} tripId={tripId} onDelete={onDelete} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -783,13 +804,14 @@ export function BookingsTab({ tripId }: { tripId: string }) {
       <TripDocumentsSection docs={unlinkedDocs} tripId={tripId} onDelete={deleteDoc} />
 
       {/* Manual add */}
-      <button
-        type="button"
-        onClick={() => { window.location.href = `/trips/${tripId}/bookings/new`; }}
-        className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-[#1A1A2E] text-white text-sm font-bold shadow-[0_4px_14px_rgba(26,26,46,0.25)] active:scale-[0.98] transition-transform"
-      >
-        <Plus size={16} />Add Booking Manually
-      </button>
+      <a href={`/trips/${tripId}/bookings/new`}>
+        <button
+          type="button"
+          className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-[#1A1A2E] text-white text-sm font-bold shadow-[0_4px_14px_rgba(26,26,46,0.25)] active:scale-[0.98] transition-transform"
+        >
+          <Plus size={16} />Add Booking Manually
+        </button>
+      </a>
 
       {/* External links */}
       <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.08)] border border-black/5 p-4">
