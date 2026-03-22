@@ -64,7 +64,7 @@ export function buildTravelPrompt(req: AIGenerateRequest): string {
     `  • Avoid crowds: ${req.preferences.avoidCrowds ? "Yes — prefer off-peak timings and lesser-known spots" : "No preference"}`,
   ];
 
-  // ── Example item (to show format) ─────────────────────────────────────────
+  // ── Example items (to show format — sightseeing + dining) ────────────────
   const exampleItem = `{
           "time": "09:30",
           "activity": "Fushimi Inari Taisha — hike through 10,000 vermilion torii gates up Mt Inari",
@@ -75,11 +75,27 @@ export function buildTravelPrompt(req: AIGenerateRequest): string {
           "openingHours": "24 hours (shrine open always, inner areas busier 08:00-16:00)",
           "tip": "Arrive before 8am to avoid crowds. Wear comfortable shoes — full hike is 4km. Look for fox (kitsune) statues throughout.",
           "thumbnail": "⛩️",
-          "notes": "UNESCO-listed site, free entry. The torii gates were donated by businesses seeking good fortune.",
+          "notes": "UNESCO-listed site, free entry. The torii gates were donated by businesses seeking good fortune. Kids love spotting the fox statues.",
           "costLocal": 0,
           "localCurrency": "JPY",
           "latitude": 34.9671,
           "longitude": 135.7727
+        },
+        {
+          "time": "12:30",
+          "activity": "Ichiran Ramen, Shinjuku — solo-booth tonkotsu ramen with rich pork broth",
+          "type": "dining",
+          "highlight": false,
+          "bookingRequired": false,
+          "closedOn": [],
+          "openingHours": "24 hours",
+          "tip": "Each person gets a private booth — order via the ticket machine. Customize broth richness, noodle firmness, and spice level on the sheet. Kids can order half portions.",
+          "thumbnail": "🍜",
+          "notes": "Ichiran is famous for its focused, distraction-free ramen experience. The Shinjuku branch is large with shorter waits than Shibuya.",
+          "costLocal": 1200,
+          "localCurrency": "JPY",
+          "latitude": 35.6896,
+          "longitude": 139.6994
         }`;
 
   return `You are a world-class travel planner creating a detailed, personalized ${tripDays}-day itinerary for a family trip to ${req.destination}.
@@ -132,7 +148,7 @@ PLANNING REQUIREMENTS
 ════════════════════════════════════════════════════════════
 1. STRUCTURE: Exactly ${tripDays} days (${req.startDate} through ${req.endDate}), 5-8 items per day
 2. TIMING: All activities must have realistic times. Respect travel time between locations. Don't schedule impossible back-to-back activities.
-3. MEALS: Include breakfast, lunch, and dinner for every day. Recommend specific restaurants with local specialties. Note dietary requirements.
+3. MEALS: Include breakfast, lunch, and dinner for every day. ALWAYS use the REAL restaurant or food-stall name — never write "a ramen restaurant" or "local café". Use the actual venue: e.g. "Ichiran Ramen, Shinjuku", "Tsukiji Outer Market — tuna sashimi breakfast", "Nishiki Market, Kyoto — street food walk". Activity format for dining: "Venue Name, Area — specific dish or experience to have". Note dietary requirements for each meal.
 4. ACCOMMODATION: Note where the group is staying each night. First item on arrival day should be the flight/transport. Last item on departure day should be check-out and airport transfer.
 5. HIGHLIGHTS: Mark 2-3 genuinely unmissable items per day as highlights (highlight: true). These should be the signature experiences of the trip.
 6. BOOKING WARNINGS: If any attraction, restaurant, or experience requires advance booking, set bookingRequired: true. Be specific in the tip field about how far in advance to book.
