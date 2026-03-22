@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { Spinner } from "../ui/spinner";
+import { Plane, ArrowRight } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,25 @@ interface ItineraryDay {
 interface ItineraryResponse {
   success: boolean;
   data: ItineraryDay[];
+}
+
+interface Booking {
+  id: string;
+  type: string;
+  carrier?: string | null;
+  name?: string | null;
+  fromLocation?: string | null;
+  toLocation?: string | null;
+  departureDate?: string | null;
+  departureTime?: string | null;
+  arrivalDate?: string | null;
+  arrivalTime?: string | null;
+  confirmationRef?: string | null;
+}
+
+interface BookingsResponse {
+  success: boolean;
+  data: Booking[];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -219,9 +239,60 @@ function ItemCard({ item, isLast }: { item: ItineraryItem; isLast: boolean }) {
   );
 }
 
+// ── Flight arrival/departure banner ───────────────────────────────────────────
+
+function FlightBanner({ booking, role }: { booking: Booking; role: "arriving" | "departing" }) {
+  const iata = (loc: string | null | undefined) => loc?.match(/\(([A-Z]{3})\)/)?.[1] ?? loc?.slice(0, 3).toUpperCase() ?? "—";
+  const time = role === "arriving" ? booking.arrivalTime : booking.departureTime;
+  const from = iota(booking.fromLocation);
+  const to   = iata(booking.toLocation);
+  const flightName = booking.name ?? booking.carrier ?? "Flight";
+  const ref = booking.confirmationRef;
+
+  // Color: arrivals = teal/green accent, departures = orange accent
+  const bg   = role === "arriving"  ? "bg-[#06D6A0]/8 border-[#06D6A0]/25"  : "bg-[#FF6B35]/8 border-[#FF6B35]/25";
+  const icon = role === "arriving"  ? "text-[#06D6A0]"                        : "text-[#FF6B35]";
+  const pill = role === "arriving"  ? "bg-[#06D6A0]/15 text-[#06D6A0]"        : "bg-[#FF6B35]/15 text-[#FF6B35]";
+
+  return (
+    <div className={`mx-4 mt-3 mb-0 rounded-xl border px-3.5 py-2.5 flex items-center gap-2.5 ${bg}`}>
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${pill}`}>
+        <Plane size={13} className={icon} strokeWidth={2.5} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className={`text-[10px] font-bold uppercase tracking-widest ${icon}`}>
+            {role === "arriving" ? "✈ Arriving" : "✈ Departing"}
+          </span>
+          {time && (
+            <span className="text-xs font-black text-[#1A1A2E] tabular-nums">{time}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+          <span className="text-[11px] font-bold text-[#1A1A2E]">{from}</span>
+          <ArrowRight size={9} className="text-[#9CA3AF] shrink-0" />
+          <span className="text-[11px] font-bold text-[#1A1A2E]">{to}</span>
+          <span className="text-[11px] text-[#9CA3AF] truncate">· {flightName}{ref ? ` · ${ref}` : ""}</span>
+        </div>
+      </div>
+      {role === "arriving" && booking.arrivalTime && (
+        <div className="shrink-0 text-right">
+          <p className="text-[9px] text-[#9CA3AF] font-medium leading-none">local time</p>
+          <p className="text-[10px] text-[#9CA3AF] font-medium">at destination</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// helper (needed inside FlightBanner closure)
+function iota(loc: string | null | undefined) {
+  return loc?.match(/\(([A-Z]{3})\)/)?.[1] ?? loc?.slice(0, 3).toUpperCase() ?? "—";
+}
+
 // ── Day card ──────────────────────────────────────────────────────────────────
 
-function DayCard({ day }: { day: ItineraryDay }) {
+function DayCard({ day, flightBanners }: { day: ItineraryDay; flightBanners: { arriving: Booking[]; departing: Booking[] } }) {
   const [collapsed, setCollapsed] = useState(false);
   const sorted = day.items.slice().sort((a, b) => a.sortOrder - b.sortOrder);
   const highlights = sorted.filter((i) => i.highlight).length;
@@ -274,9 +345,21 @@ function DayCard({ day }: { day: ItineraryDay }) {
         </div>
       </button>
 
+      {/* Flight banners — shown even when collapsed so arrival time is always visible */}
+      {(flightBanners.arriving.length > 0 || flightBanners.departing.length > 0) && (
+        <div className="pb-3">
+          {flightBanners.arriving.map((b) => (
+            <FlightBanner key={b.id} booking={b} role="arriving" />
+          ))}
+          {flightBanners.departing.map((b) => (
+            <FlightBanner key={b.id} booking={b} role="departing" />
+          ))}
+        </div>
+      )}
+
       {/* Timeline items */}
       {!collapsed && (
-        <div className="px-4 pt-4 pb-2">
+        <div className="px-4 pt-2 pb-2">
           {sorted.length === 0 ? (
             <p className="text-xs text-[#9CA3AF] py-4 text-center">No activities for this day</p>
           ) : (
@@ -324,13 +407,48 @@ function TripSummaryBar({ days }: { days: ItineraryDay[] }) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+// Extract YYYY-MM-DD from an ISO date string or date-only string
+function toDateKey(d: string | null | undefined): string | null {
+  if (!d) return null;
+  return d.split("T")[0] ?? null;
+}
+
 export function ItineraryTab({ tripId }: { tripId: string }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["trips", tripId, "itinerary"],
     queryFn: () => api.get<ItineraryResponse>(`/trips/${tripId}/itinerary`),
   });
 
+  const { data: bData } = useQuery({
+    queryKey: ["trips", tripId, "bookings"],
+    queryFn: () => api.get<BookingsResponse>(`/trips/${tripId}/bookings`),
+  });
+
   const days = (data?.data ?? []).slice().sort((a, b) => a.dayNumber - b.dayNumber);
+  const bookings = bData?.data ?? [];
+
+  // Build per-day flight banner maps (arriving / departing)
+  const flightArrivingByDate = new Map<string, Booking[]>();
+  const flightDepartingByDate = new Map<string, Booking[]>();
+  for (const b of bookings) {
+    if (b.type !== "flight") continue;
+    const arrKey = toDateKey(b.arrivalDate);
+    if (arrKey) {
+      const arr = flightArrivingByDate.get(arrKey) ?? [];
+      arr.push(b);
+      flightArrivingByDate.set(arrKey, arr);
+    }
+    const depKey = toDateKey(b.departureDate);
+    if (depKey) {
+      // Only show departure banner if this day is a departure day but NOT an arrival day
+      // (avoids double-banners on same-day connections)
+      if (depKey !== arrKey) {
+        const dep = flightDepartingByDate.get(depKey) ?? [];
+        dep.push(b);
+        flightDepartingByDate.set(depKey, dep);
+      }
+    }
+  }
 
   if (isLoading) {
     return (
@@ -364,9 +482,19 @@ export function ItineraryTab({ tripId }: { tripId: string }) {
   return (
     <div className="flex flex-col gap-3">
       <TripSummaryBar days={days} />
-      {days.map((day) => (
-        <DayCard key={day.id} day={day} />
-      ))}
+      {days.map((day) => {
+        const dayKey = toDateKey(day.date);
+        return (
+          <DayCard
+            key={day.id}
+            day={day}
+            flightBanners={{
+              arriving:  dayKey ? (flightArrivingByDate.get(dayKey)  ?? []) : [],
+              departing: dayKey ? (flightDepartingByDate.get(dayKey) ?? []) : [],
+            }}
+          />
+        );
+      })}
     </div>
   );
 }

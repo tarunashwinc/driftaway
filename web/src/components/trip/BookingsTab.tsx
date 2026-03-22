@@ -720,25 +720,39 @@ export function BookingsTab({ tripId }: { tripId: string }) {
   const bookings = bData?.data ?? [];
   const allDocs  = dData?.data ?? [];
 
-  // Separate docs by bookingId: linked to a booking vs. general trip docs
+  // Build lookup maps for matching documents to bookings
+  // Docs may store either: metadata.bookingId (UUID) or metadata.bookingRef / metadata.confirmationRef
+  // (a confirmation string like "NH72155448685818"). Support both.
+  const bookingById = new Map<string, Booking>(bookings.map((b) => [b.id, b]));
+  const bookingByConfRef = new Map<string, string>(); // confirmationRef → bookingId
+  for (const b of bookings) {
+    if (b.confirmationRef) bookingByConfRef.set(b.confirmationRef, b.id);
+  }
+
   const docsByBookingId = new Map<string, TripDocument[]>();
   const unlinkedDocs: TripDocument[] = [];
 
-  const allBookingIds = new Set(bookings.map((b) => b.id));
-
   for (const doc of allDocs) {
-    const bid = doc.metadata?.bookingId as string | undefined;
-    if (bid && allBookingIds.has(bid)) {
-      const existing = docsByBookingId.get(bid) ?? [];
+    const meta = doc.metadata ?? {};
+    // Prefer explicit bookingId (UUID), then fall back to bookingRef / confirmationRef string
+    const explicitId = meta.bookingId as string | undefined;
+    const refString = (meta.bookingRef ?? meta.confirmationRef ?? meta.bookingNumber) as string | undefined;
+
+    const resolvedBookingId =
+      (explicitId && bookingById.has(explicitId) ? explicitId : null) ??
+      (refString ? bookingByConfRef.get(refString) ?? null : null);
+
+    if (resolvedBookingId) {
+      const existing = docsByBookingId.get(resolvedBookingId) ?? [];
       existing.push(doc);
-      docsByBookingId.set(bid, existing);
+      docsByBookingId.set(resolvedBookingId, existing);
     } else {
-      // No bookingId or bookingId doesn't match any booking → show in general section
       unlinkedDocs.push(doc);
     }
   }
 
   const getDocsForBooking = (b: Booking) => docsByBookingId.get(b.id) ?? [];
+  void bookingById; // used only in the map above
 
   const refreshAll = () => {
     void queryClient.invalidateQueries({ queryKey: ["trips", tripId, "bookings"] });
